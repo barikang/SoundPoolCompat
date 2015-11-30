@@ -1,0 +1,80 @@
+import org.apache.tools.ant.taskdefs.condition.Os
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.2"
+
+    defaultConfig {
+        minSdkVersion 8
+        targetSdkVersion 23
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    sourceSets {
+        main {
+            jni.srcDirs = []
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    testCompile 'junit:junit:4.12'
+    compile 'com.android.support:appcompat-v7:23.1.1'
+}
+
+
+def getNdkBuildCmd() {
+    if (System.env.ANDROID_NDK_ROOT != null)
+        return System.env.ANDROID_NDK_ROOT
+    Properties properties = new Properties()
+    properties.load(project.rootProject.file('local.properties').newDataInputStream())
+    def ndkdir = properties.getProperty('ndk.dir', null)
+    if (ndkdir == null)
+        throw new GradleException("NDK location not found. Define location with ndk.dir in the local.properties file or with an ANDROID_NDK_ROOT environment variable.")
+
+    def ndkbuild = ndkdir + "/ndk-build"
+    if (Os.isFamily(Os.FAMILY_WINDOWS))
+        ndkbuild += ".cmd"
+
+    return ndkbuild
+}
+
+
+def getNDKBuildArguments(boolean doClean) {
+
+
+    def String arg0 = "NDK_APP_LIBS_OUT=src/main/jniLibs"
+    def String arg1 = "NDK_OUT=build/tmpobj"
+    def String arg2 = "NDK_PROJECT_PATH=src/main"
+
+    def List<String> args = ['-C',file('.').absolutePath,arg0,arg1,arg2]
+    if (doClean)
+        args.push("clean")
+
+    return args.toArray()
+
+}
+
+task "buildNative_${project.name}"(group: 'ndk') << {
+    exec {
+        executable getNdkBuildCmd()
+        args getNDKBuildArguments(false)
+    }
+}
+
+task "cleanNative_${project.name}"(group: 'ndk') <<  {
+    exec {
+        executable getNdkBuildCmd()
+        args getNDKBuildArguments(true)
+    }
+}
