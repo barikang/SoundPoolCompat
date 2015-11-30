@@ -46,13 +46,18 @@ namespace SoundPoolCompat {
 class AudioEngine
 {
 public:
-    static AudioEngine* getInstance();
+    static std::shared_ptr<AudioEngine> getInstance();
     static void initialize();
     static void release();
     static double getCurrentTime();
+private:
+    static std::shared_ptr<AudioEngine> g_audioEngine;
+    static int g_refCount;
+    static std::mutex g_mutex;
 
 private:
     AudioEngine();
+public:
     ~AudioEngine();
 
 public:
@@ -67,9 +72,6 @@ private:
     void releaseUnusedAudioPlayer();
 
     bool init();
-    static AudioEngine* g_audioEngine;
-    static int g_refCount;
-    static std::mutex g_mutex;
 
     // engine interfaces
     SLObjectItf _engineObject;

@@ -212,18 +212,18 @@ bool AudioPlayer::enqueueBuffer()
 
 ///////////////////////////////
 
-AudioEngine* AudioEngine::g_audioEngine = nullptr;
+std::shared_ptr<AudioEngine> AudioEngine::g_audioEngine(nullptr);
 int AudioEngine::g_refCount = 0;
 std::mutex AudioEngine::g_mutex;
 
-AudioEngine* AudioEngine::getInstance()
+std::shared_ptr<AudioEngine> AudioEngine::getInstance()
 {
     return g_audioEngine;
 }
 void AudioEngine::initialize() {
     std::lock_guard<std::mutex> guard(g_mutex);
     if(g_audioEngine == nullptr) {
-        g_audioEngine = new AudioEngine();
+        g_audioEngine = std::shared_ptr<AudioEngine>(new AudioEngine());
         g_audioEngine->init();
         LOGD("initlized AudioEngine");
     }
@@ -233,14 +233,10 @@ void AudioEngine::initialize() {
 void AudioEngine::release() {
     std::lock_guard<std::mutex> guard(g_mutex);
 
-
     if(g_audioEngine){
         g_refCount--;
         if(g_refCount == 0) {
-            delete g_audioEngine;
-            g_audioEngine = nullptr;
-            LOGD("released AudioEngine");
-
+            g_audioEngine.reset();
         }
     }
 }
@@ -269,11 +265,10 @@ JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeP
         (JNIEnv *env, jclass clasz, jint audioID, jboolean loop, jfloat volume)
 {
     jint ret = -1;
-    AudioEngine *pEngine = AudioEngine::getInstance();
+    auto pEngine = AudioEngine::getInstance();
     if(pEngine)
     {
         ret = pEngine->playAudio(audioID,loop,volume);
-
     }
 
     return ret;
@@ -283,7 +278,7 @@ JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeP
 JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePause
         (JNIEnv *env, jclass clasz, jint streamID)
 {
-    AudioEngine *pEngine = AudioEngine::getInstance();
+    auto pEngine = AudioEngine::getInstance();
     if(pEngine)
     {
         pEngine->pause(streamID);
@@ -294,7 +289,7 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeP
 JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeStop
         (JNIEnv *env, jclass clasz, jint streamID)
 {
-    AudioEngine *pEngine = AudioEngine::getInstance();
+    auto pEngine = AudioEngine::getInstance();
     if(pEngine)
     {
         pEngine->stop(streamID);
@@ -305,7 +300,7 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeS
 JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeResume
         (JNIEnv *env, jclass clasz, jint streamID)
 {
-    AudioEngine *pEngine = AudioEngine::getInstance();
+    auto pEngine = AudioEngine::getInstance();
     if(pEngine)
     {
         pEngine->resume(streamID);
@@ -321,7 +316,6 @@ AudioEngine::AudioEngine()
 , _engineObject(nullptr)
 , _engineEngine(nullptr)
 , _outputMixObject(nullptr)
-
 {
 
 }
@@ -337,6 +331,8 @@ AudioEngine::~AudioEngine()
     {
         (*_engineObject)->Destroy(_engineObject);
     }
+
+    LOGD("released AudioEngine");
 
 }
 
