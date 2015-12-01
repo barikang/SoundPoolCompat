@@ -10,6 +10,7 @@ import android.util.Log;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.Executor;
 
 /**
  * Created by Jaehun on 2015-11-30.
@@ -37,8 +38,8 @@ public class AudioSource {
     private final int mAudioID;
     private boolean mReleased = false;
 
-    private AudioSource(int audioID) {
-        mAudioID = audioID;
+    private AudioSource() {
+        mAudioID = nativeCreateAudioSource();
     }
 
     public int getAudioID() { return mAudioID; };
@@ -51,46 +52,55 @@ public class AudioSource {
         }
     }
 
+    synchronized
+    public boolean isReleased() { return mReleased; };
+
+    @Override
+    protected void finalize() throws Throwable {
+        release();
+    }
+
+    public interface OnCreateAudioSourceComplete
+    {
+        void onCreateAudioSourceComplete(AudioSource audioSrc,boolean success);
+
+    }
 
 
     /////////////////////////////////////////////////////////////////////////////////
-    public static AudioSource createFromFileDescriptor(FileDescriptor fd, long fdOffset, long fdLength)
+    public static AudioSource createFromFD(FileDescriptor fd, long fdOffset, long fdLength)
     {
-        int audioID = nativeCreateAudioSource();
-        if(!nativeSetAudioSourceFileDescriptor(audioID,fd,fdOffset,fdLength,true))
+        AudioSource audioSrc = new AudioSource();
+        if(!nativeSetAudioSourceFileDescriptor(audioSrc.getAudioID(),fd,fdOffset,fdLength,true))
         {
-            if(audioID != INVALID_AUDIOID)
-                nativeReleaseAudioSource(audioID);
-            audioID = INVALID_AUDIOID;
+            audioSrc.release();
+            audioSrc = null;
         }
-        return new AudioSource(audioID);
+        return audioSrc;
     }
 
     public static AudioSource createFromURI(String uri)
     {
-        int audioID = nativeCreateAudioSource();
-        if(!nativeSetAudioSourceURI(audioID, uri))
+        AudioSource audioSrc = new AudioSource();
+        if(!nativeSetAudioSourceURI(audioSrc.getAudioID(), uri))
         {
-            if(audioID != INVALID_AUDIOID)
-                nativeReleaseAudioSource(audioID);
-            audioID = INVALID_AUDIOID;
+            audioSrc.release();
+            audioSrc = null;
         }
-        return new AudioSource(audioID);
+        return audioSrc;
     }
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
-    public static AudioSource createPCMFromFileDescriptor(FileDescriptor fd, long fdOffset, long fdLength) {
-        int audioID = nativeCreateAudioSource();
-
+    private static boolean decodeAndBindPCM(AudioSource audioSrc,FileDescriptor fd, long fdOffset, long fdLength)
+    {
+        boolean ret = true;
+        final int audioID = audioSrc.getAudioID();
         MediaExtractor extractor = new MediaExtractor();
         MediaCodec codec = null;
         ByteBuffer[] codecInputBuffers = null;
         ByteBuffer[] codecOutputBuffers = null;
         try {
             extractor.setDataSource(fd, fdOffset, fdLength);
-
-
-            //assertEquals("wrong number of tracks", 1, extractor.getTrackCount());
             MediaFormat format = null;
             String mime = null;
             for (int i = 0; i < extractor.getTrackCount(); i++) {
@@ -202,12 +212,8 @@ public class AudioSource {
             if(false == nativeSetAudioSourcePCM(audioID,channelCount,sampleRate,16))
                 throw new IllegalStateException();
 
-
-
         }catch (Exception e) {
-            if(audioID != INVALID_AUDIOID)
-                nativeReleaseAudioSource(audioID);
-            audioID = INVALID_AUDIOID;
+            ret = false;
         }
         finally {
             if(codec != null) {
@@ -218,11 +224,38 @@ public class AudioSource {
                 extractor.release();
         }
 
-        if(audioID != INVALID_AUDIOID)
-            return new AudioSource(audioID);
-
-        return null;
-
+        return ret;
     }
+
+    public static AudioSource createPCMFromFD(FileDescriptor fd, long fdOffset, long fdLength) {
+        AudioSource audioSrc = new AudioSource();
+        if(!decodeAndBindPCM(audioSrc,fd,fdOffset,fdLength))
+        {
+            audioSrc.release();
+            audioSrc = null;
+        }
+        return audioSrc;
+    }
+
+    public static AudioSource createPCMFromFDAsync(final FileDescriptor fd, final long fdOffset,final long fdLength
+            ,final Executor executor,final OnCreateAudioSourceComplete listener) {
+        final AudioSource audioSrc = new AudioSource();
+
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                final boolean decodeResult = decodeAndBindPCM(audioSrc,fd,fdOffset,fdLength);
+                if(!decodeResult)
+                {
+                    audioSrc.release();
+                }
+                if(listener != null)
+                    listener.onCreateAudioSourceComplete(audioSrc,decodeResult);
+
+            }
+        });
+        return audioSrc;
+    }
+
 
 }

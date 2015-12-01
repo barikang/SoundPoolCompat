@@ -26,7 +26,7 @@ public class MainActivity extends AppCompatActivity {
         AssetFileDescriptor fd = getResources().openRawResourceFd(R.raw.numbers_en_1);
 
         try {
-            mAudioSrc1 = AudioSource.createPCMFromFileDescriptor(fd.getFileDescriptor(), fd.getStartOffset(), fd.getLength());
+            mAudioSrc1 = AudioSource.createPCMFromFD(fd.getFileDescriptor(), fd.getStartOffset(), fd.getLength());
             fd.close();
         } catch (IOException e) {
             e.printStackTrace();
