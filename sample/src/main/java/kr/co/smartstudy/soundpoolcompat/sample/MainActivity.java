@@ -36,7 +36,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btn_test).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mLastStreamID = mAudioEngine.playAudio(mAudioSrc1, false, 1.0f);
+                mLastStreamID = mAudioEngine.playAudio(mAudioSrc1, 2, 1.0f,AudioEngine.ANDROID_STREAM_SYSTEM);
             }
         });
         findViewById(R.id.btn_test2).setOnClickListener(new View.OnClickListener() {
@@ -53,13 +53,13 @@ public class MainActivity extends AppCompatActivity {
                 Runnable r = new Runnable() {
                     @Override
                     public void run() {
-                        for(int i = 0 ; i < 10 ; i++) {
+                        for(int i = 0 ; i < 20 ; i++) {
 
                             //if (id >= 0)
                             {
                                 try {
-                                    Thread.sleep(rand.nextInt(60));
-                                    int id = mAudioEngine.playAudio(mAudioSrc1, false, 1.0f);
+                                    Thread.sleep(30+rand.nextInt(100));
+                                    int id = mAudioEngine.playAudio(mAudioSrc1, 0, 1.0f,AudioEngine.ANDROID_STREAM_SYSTEM);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
@@ -69,12 +69,8 @@ public class MainActivity extends AppCompatActivity {
                     }
                 };
 
-                new Thread(r).start();
-                new Thread(r).start();
-                new Thread(r).start();
-                new Thread(r).start();
-                new Thread(r).start();
-                new Thread(r).start();
+                for(int i = 0 ; i < 10 ; i++)
+                    new Thread(r).start();
             }
         });
 

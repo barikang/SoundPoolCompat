@@ -17,15 +17,17 @@ namespace SoundPoolCompat {
         AudioPlayer();
         ~AudioPlayer();
 
-        bool init(SLEngineItf engineEngine, SLObjectItf outputMixObject,
+        bool init(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
                   std::shared_ptr<AudioSource> pAudioSrc,
-                  float volume, bool loop);
+                  float volume, int repeatCount,SLint32 androidStreamType);
 
         bool enqueueBuffer();
+        void resetBuffer();
 
+        int _streamID;
         bool _playOver;
         double _stoppedTime;
-        bool _loop;
+        int _repeatCount;
         SLPlayItf _fdPlayerPlay;
 
     private:
@@ -37,7 +39,7 @@ namespace SoundPoolCompat {
 
         std::shared_ptr<AudioSource> _audioSrc;
 
-        int _streamID;
+
         volatile int _currentBufIndex;
 
         friend class AudioEngine;
@@ -55,23 +57,28 @@ private:
     static int g_refCount;
     static std::mutex g_mutex;
 
+
 private:
     AudioEngine();
 public:
     ~AudioEngine();
 
 public:
-    int playAudio(int audioID,bool loop ,float volume);
+    int playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType);
     void setVolume(int streamID,float volume);
     void pause(int streamID);
     void resume(int streamID);
     void stop(int streamID);
     float getCurrentTime(int streamID);
+    void stopAll(bool wait);
+    void enqueueFinishedPlay(int streamID);
 private:
     AudioPlayer*  getAudioPlayer(int streamID);
-    void releaseUnusedAudioPlayer();
+    int releaseUnusedAudioPlayer();
 
     bool init();
+    static void threadFunc(AudioEngine* audioEngine);
+
 
     // engine interfaces
     SLObjectItf _engineObject;
@@ -85,6 +92,12 @@ private:
 
     std::atomic<int> _currentAudioStreamID;
     std::recursive_mutex _recurMutex;
+
+    std::mutex _queueMutex;
+    std::deque<int> _queueFinishedStreamID;
+    std::condition_variable _threadCondition;
+    std::thread* _thread;
+    volatile bool _released;
 
 };
 

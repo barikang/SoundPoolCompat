@@ -10,7 +10,6 @@ import android.util.Log;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 
 /**
  * Created by Jaehun on 2015-11-30.
@@ -27,7 +26,7 @@ public class AudioSource {
     static native boolean nativeSetAudioSourcePCM(int audioID,int numChannels,int samplingRate,int bitPerSample);
     static native boolean nativeAddPCMBuffer_DirectByteBuffer(int audioID,ByteBuffer byteBuffer,int offset,int size);
     static native boolean nativeAddPCMBuffer_ByteArray(int audioID,byte[] byteArray,int offset,int size);
-    static native boolean nativeSetAudioSourceFileDescriptor(int audioID,int fd,int offset,int length,boolean autoclose);
+    static native boolean nativeSetAudioSourceFileDescriptor(int audioID,FileDescriptor fd,long offset,long length,boolean autoclose);
     static native boolean nativeSetAudioSourceURI(int audioID,String uri);
 
 
@@ -53,7 +52,31 @@ public class AudioSource {
     }
 
 
+
     /////////////////////////////////////////////////////////////////////////////////
+    public static AudioSource createFromFileDescriptor(FileDescriptor fd, long fdOffset, long fdLength)
+    {
+        int audioID = nativeCreateAudioSource();
+        if(!nativeSetAudioSourceFileDescriptor(audioID,fd,fdOffset,fdLength,true))
+        {
+            if(audioID != INVALID_AUDIOID)
+                nativeReleaseAudioSource(audioID);
+            audioID = INVALID_AUDIOID;
+        }
+        return new AudioSource(audioID);
+    }
+
+    public static AudioSource createFromURI(String uri)
+    {
+        int audioID = nativeCreateAudioSource();
+        if(!nativeSetAudioSourceURI(audioID, uri))
+        {
+            if(audioID != INVALID_AUDIOID)
+                nativeReleaseAudioSource(audioID);
+            audioID = INVALID_AUDIOID;
+        }
+        return new AudioSource(audioID);
+    }
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     public static AudioSource createPCMFromFileDescriptor(FileDescriptor fd, long fdOffset, long fdLength) {
@@ -82,10 +105,6 @@ public class AudioSource {
             codec = MediaCodec.createDecoderByType(mime);
             codec.configure(format, null /* surface */, null /* crypto */, 0 /* flags */);
             codec.start();
-
-
-            Log.d(TAG, "first output format " + codec.getOutputFormat());
-
 
             final boolean useBuffersUnder21 = Build.VERSION.SDK_INT < 21;
             if (useBuffersUnder21) {

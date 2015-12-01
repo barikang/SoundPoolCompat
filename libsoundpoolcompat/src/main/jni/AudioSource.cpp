@@ -93,11 +93,11 @@ bool AudioSource::addPCMBuffer(int audioID,void* pBuf,int offset,int size) {
 
 }
 
-bool AudioSource::setAudioSourceFileDescriptor(int audioID,int fd,int offset,int length,bool autoclose )
+bool AudioSource::setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset,int64_t length,bool autoclose )
 {
     if(fd < 0 || length <= 0)
     {
-        LOGE("setAudioSourceFileDescriptor : invalid fd: %d , length = %d",fd,length);
+        LOGE("setAudioSourceFileDescriptor : invalid fd: %d , length = %ld",fd,(long)length);
         return false;
     }
     auto audioSrc = AudioSource::getSharedPtrAudioSource(audioID);
@@ -212,15 +212,29 @@ JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nat
     return ret;
 }
 
+// function contents
+static int jniGetFDFromFileDescriptor(JNIEnv * env, jobject fileDescriptor) {
+    jint fd = -1;
+    jclass fdClass = env->FindClass("java/io/FileDescriptor");
+
+    if (fdClass != NULL) {
+        jfieldID fdClassDescriptorFieldID = env->GetFieldID(fdClass, "descriptor", "I");
+        if (fdClassDescriptorFieldID != NULL && fileDescriptor != NULL) {
+            fd = env->GetIntField(fileDescriptor, fdClassDescriptorFieldID);
+        }
+    }
+
+    return fd;
+}
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
  * Method:    nativeSetAudioSourceFileDescriptor
- * Signature: (IIIIZ)Z
+ * Signature: (ILjava/io/FileDescriptor;JJZ)Z
  */
 JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeSetAudioSourceFileDescriptor
-        (JNIEnv *env, jclass clasz, jint audioID, jint fd, jint offset, jint length, jboolean autoclose)
+        (JNIEnv *env, jclass clasz, jint audioID, jobject fd, jlong offset, jlong length, jboolean autoclose)
 {
-    return AudioSource::setAudioSourceFileDescriptor(audioID,fd,offset,length,autoclose);
+    return AudioSource::setAudioSourceFileDescriptor(audioID,jniGetFDFromFileDescriptor(env, fd),int64_t(offset),int64_t(length),autoclose);
 }
 
 /*

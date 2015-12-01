@@ -23,6 +23,8 @@
 #include <functional>
 #include <mutex>
 #include <unistd.h>
+#include <chrono>
+#include <deque>
 
 #ifndef SOUNDPOOLCOMPAT_UTILS_H
 #define SOUNDPOOLCOMPAT_UTILS_H

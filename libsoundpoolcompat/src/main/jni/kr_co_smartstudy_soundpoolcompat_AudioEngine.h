@@ -7,6 +7,18 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_VOICE
+#define kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_VOICE 0L
+#undef kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_SYSTEM
+#define kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_SYSTEM 1L
+#undef kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_RING
+#define kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_RING 2L
+#undef kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_MEDIA
+#define kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_MEDIA 3L
+#undef kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_ALARM
+#define kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_ALARM 4L
+#undef kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_NOTIFICATION
+#define kr_co_smartstudy_soundpoolcompat_AudioEngine_ANDROID_STREAM_NOTIFICATION 5L
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
  * Method:    nativeInitilizeAudioEngine
@@ -26,10 +38,10 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeR
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
  * Method:    nativePlayAudio
- * Signature: (IZF)I
+ * Signature: (IIFI)I
  */
 JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePlayAudio
-  (JNIEnv *, jclass, jint, jboolean, jfloat);
+  (JNIEnv *, jclass, jint, jint, jfloat, jint);
 
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
