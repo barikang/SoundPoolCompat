@@ -107,6 +107,7 @@ bool AudioSource::setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset
         audioSrc->_fd = dup(fd);
         audioSrc->_fd_offset = offset;
         audioSrc->_fd_length = length;
+        LOGD("Setting fd : %d offset %d  leng %d",audioSrc->_fd,(int)offset,(int)length);
         return true;
     }
 

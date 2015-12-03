@@ -10,23 +10,48 @@ using namespace SoundPoolCompat;
 
 void bqAudioPlayer_Callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context)
 {
-    AudioPlayer* pAudioPlayer = (AudioPlayer*)context;
-    if(pAudioPlayer->enqueueBuffer() == false)
-    {
-        //LOGD("[%d] enqueueBuffer end",pAudioPlayer->_streamID);
+    if (context) {
+        AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
+        if (pAudioPlayer->enqueueBuffer() == false) {
+            //LOGD("[%d] enqueueBuffer end",pAudioPlayer->_streamID);
+        }
     }
 }
 
 void bqAudioPlayer_Callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 playEvent)
 {
-    if (context && (playEvent & SL_PLAYEVENT_HEADATEND) > 0)
+    if (context)
     {
-        AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
-        LOGD("[%d] callback playevent : end",pAudioPlayer->_streamID);
-        auto pEngine = AudioEngine::getInstance();
-        if(pEngine)
-            pEngine->enqueueFinishedPlay(pAudioPlayer->_streamID);
+        if((playEvent & SL_PLAYEVENT_HEADATEND) > 0) {
+            AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
+            LOGD("[%d] callback playevent : end", pAudioPlayer->_streamID);
+            auto pEngine = AudioEngine::getInstance();
+            if (pEngine)
+                pEngine->enqueueFinishedPlay(pAudioPlayer->_streamID);
+        }
     }
+}
+
+void bqAudioPlayer_Callback_PrefetchStatus(SLPrefetchStatusItf caller,void *context,SLuint32 event)
+{
+    if(context)
+    {
+        SLuint32 status = 0;
+        SLpermille fillLevel = 0;
+        (*caller)->GetPrefetchStatus(caller,&status);
+        (*caller)->GetFillLevel(caller,&fillLevel);
+
+        AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
+        //LOGD("PrefetchStatus streamID : %d filllevel %d status %d",pAudioPlayer->_streamID,(int)fillLevel,(int)status);
+        if( (status & SL_PREFETCHSTATUS_UNDERFLOW) && fillLevel == 0)
+        {
+            LOGD("Prefetch error! StreamID = %d",pAudioPlayer->_streamID);
+            auto pEngine = AudioEngine::getInstance();
+            if (pEngine)
+                pEngine->enqueueFinishedPlay(pAudioPlayer->_streamID);
+        }
+    }
+
 }
 
 
@@ -37,12 +62,16 @@ AudioPlayer::AudioPlayer()
         , _streamID(0)
         , _stoppedTime(0.0f)
         , _currentBufIndex(0)
+        , _dupFD(0)
 {
+
 
 }
 
 AudioPlayer::~AudioPlayer()
 {
+
+
     if (_fdPlayerObject)
     {
         (*_fdPlayerObject)->Destroy(_fdPlayerObject);
@@ -53,15 +82,21 @@ AudioPlayer::~AudioPlayer()
         _fdPlayerPrefetchStatus = nullptr;
         _fdPlayerConfig = nullptr;
         _fdPlayerPlayRate = nullptr;
-        LOGD("[%d] AudioPlayer destoryed",_streamID);
+
     }
 
+    if(_dupFD > 0)
+    {
+        close(_dupFD);
+    }
+    LOGD("[%d] AudioPlayer destoryed",_streamID);
 }
 
 bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
                        std::shared_ptr<AudioSource> pAudioSrc,
                        SLint32 androidStreamType,int streamGroupID)
 {
+    LOGD("[%d] Player Init : ",streamID);
     bool ret = false;
     _streamID = streamID;
     _streamGroupID = streamGroupID;
@@ -76,7 +111,11 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
         SLDataLocator_URI loc_uri;
         SLDataFormat_MIME format_mime;
 
-        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM) {
+        bool useBufferQueue = false;
+
+        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM)
+        {
+            useBufferQueue = true;
 
             SLuint32 containerSize = 8;
             const int bitPerSample = _audioSrc->_pcm_bitPerSample;
@@ -95,18 +134,16 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
 
             loc_bufq = { SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
             format_pcm = {SL_DATAFORMAT_PCM, (SLuint32) numChannels,
-                                           (SLuint32) (samplingRate * 1000),
-                                           (SLuint32) bitPerSample, containerSize,
-                                           speaker, SL_BYTEORDER_LITTLEENDIAN};
+                          (SLuint32) (samplingRate * 1000),
+                          (SLuint32) bitPerSample, containerSize,
+                          speaker, SL_BYTEORDER_LITTLEENDIAN};
 
             audioSrc = {&loc_bufq, &format_pcm};
         }
         else if (_audioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
-            SLint32 fd = (SLint32) _audioSrc->_fd;
-            SLAint64 offset = (SLAint64)_audioSrc->_fd_offset;
-            SLAint64 length = (SLAint64)_audioSrc->_fd_length;
 
-            loc_fd = {SL_DATALOCATOR_ANDROIDFD, fd,offset,length};
+            _dupFD = dup(_audioSrc->_fd);
+            loc_fd = {SL_DATALOCATOR_ANDROIDFD, _dupFD,(SLAint64)_audioSrc->_fd_offset,(SLAint64)_audioSrc->_fd_length};
             format_mime = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
 
             audioSrc = { &loc_fd,&format_mime };
@@ -125,12 +162,25 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
         SLDataSink audioSnk = {&loc_outmix, NULL};
 
         // create audio player
-        const SLInterfaceID ids[5] = {SL_IID_ANDROIDSIMPLEBUFFERQUEUE, SL_IID_VOLUME,
-                                      SL_IID_PLAY, SL_IID_ANDROIDCONFIGURATION,SL_IID_PLAYBACKRATE};
-        const SLboolean req[5] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE,
-                                  SL_BOOLEAN_TRUE,SL_BOOLEAN_TRUE};
+        const SLInterfaceID ids[6] = {
+                SL_IID_ANDROIDSIMPLEBUFFERQUEUE
+                ,SL_IID_VOLUME
+                ,SL_IID_PLAY
+                ,SL_IID_ANDROIDCONFIGURATION
+                ,SL_IID_PLAYBACKRATE
+                ,SL_IID_PREFETCHSTATUS
+        };
+        const SLboolean req[6] = {
+                useBufferQueue ? SL_BOOLEAN_TRUE : SL_BOOLEAN_FALSE
+                ,SL_BOOLEAN_TRUE
+                ,SL_BOOLEAN_TRUE
+                ,SL_BOOLEAN_TRUE
+                ,SL_BOOLEAN_TRUE
+                ,SL_BOOLEAN_TRUE
+        };
+
         auto result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
-                                                         &audioSrc, &audioSnk, 5, ids, req);
+                                                         &audioSrc, &audioSnk, useBufferQueue ? 5 : 6, ids, req);
         if (SL_RESULT_SUCCESS != result) {
             LOGE("create audio player fail");
             break;
@@ -138,7 +188,7 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
 
         // set configuration before realize
         result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDCONFIGURATION,
-                                                       &_fdPlayerConfig);
+                                                  &_fdPlayerConfig);
         if (SL_RESULT_SUCCESS != result) { LOGE("get the config interface fail"); break; };
         (*_fdPlayerConfig)->SetConfiguration(_fdPlayerConfig, SL_ANDROID_KEY_STREAM_TYPE,
                                              &androidStreamType, sizeof(SLint32));
@@ -157,7 +207,7 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
         if (SL_RESULT_SUCCESS != result) { LOGE("register play callback fail");break; }
 
 
-        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM)
+        if (useBufferQueue)
         {
             // get the bufferqueue interface
             result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
@@ -167,6 +217,19 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
             // register callback on the buffer queue
             result = (*_fdPlayerBufferQueue)->RegisterCallback(_fdPlayerBufferQueue, bqAudioPlayer_Callback_SimpleBufferQueue,this);
             if(SL_RESULT_SUCCESS != result){ LOGE("register buffer queue callback fail"); break; }
+
+        }
+        else
+        {
+            result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject,SL_IID_PREFETCHSTATUS,&_fdPlayerPrefetchStatus);
+            if (SL_RESULT_SUCCESS != result) {LOGE("get the prefetch interface fail");break; };
+
+            result = (*_fdPlayerPrefetchStatus)->SetCallbackEventsMask(_fdPlayerPrefetchStatus,SL_PREFETCHEVENT_STATUSCHANGE|SL_PREFETCHEVENT_FILLLEVELCHANGE);
+            if (SL_RESULT_SUCCESS != result) {LOGE("set prefetch callback event mask fail");break; };
+            result = (*_fdPlayerPrefetchStatus)->SetFillUpdatePeriod(_fdPlayerPrefetchStatus,50);
+            if (SL_RESULT_SUCCESS != result) {LOGE("set fillupdateperiod fail");break; };
+            result = (*_fdPlayerPrefetchStatus)->RegisterCallback(_fdPlayerPrefetchStatus,bqAudioPlayer_Callback_PrefetchStatus , this );
+            if (SL_RESULT_SUCCESS != result) {LOGE("register prefetch callback fail");break; };
 
         }
 
@@ -184,25 +247,33 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
     return ret;
 }
 
-bool AudioPlayer::enqueueBuffer()
-{
-    if(_playOver)
+bool AudioPlayer::enqueueBuffer() {
+    if (_playOver)
         return false;
 
     bool ret = false;
-    if(_audioSrc != nullptr && _currentBufIndex < _audioSrc->_pcm_nativeBuffers.size())
+    if (_audioSrc != nullptr)
     {
-        //LOGD("enqueueBuffer %d/%d",_currentBufIndex,(int)_nativeBufIds.size());
-
-        auto pBuffer = _audioSrc->getPCMBuffer(_currentBufIndex);
-        if(pBuffer != nullptr)
+        if(_audioSrc->_type == AudioSource::AudioSourceType::PCM)
         {
-            _currentBufIndex++;
-            SLresult result = (*_fdPlayerBufferQueue)->Enqueue(_fdPlayerBufferQueue, pBuffer->ptr, pBuffer->size);
-            ret = SL_RESULT_SUCCESS == result;
-            if(SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u",(unsigned int)result); };
+            if(_currentBufIndex < _audioSrc->_pcm_nativeBuffers.size())
+            {
+                auto pBuffer = _audioSrc->getPCMBuffer(_currentBufIndex);
+                if (pBuffer != nullptr) {
+                    _currentBufIndex++;
+                    SLresult result = (*_fdPlayerBufferQueue)->Enqueue(_fdPlayerBufferQueue, pBuffer->ptr,
+                                                                       pBuffer->size);
+                    ret = SL_RESULT_SUCCESS == result;
+                    if (SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u", (unsigned int) result); };
+                }
+            }
         }
+        else{
+            return true;
+        }
+
     }
+
     return ret;
 
 }
@@ -309,8 +380,8 @@ void AudioPlayer::stop()
     if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState stop fail "); };
 
     if(_playOver == false) {
-       _stoppedTime = AudioEngine::getCurrentTime();
-       _playOver = true;
+        _stoppedTime = AudioEngine::getCurrentTime();
+        _playOver = true;
     }
 
 

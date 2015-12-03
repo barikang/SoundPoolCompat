@@ -49,6 +49,7 @@ namespace SoundPoolCompat {
         SLPlaybackRateItf _fdPlayerPlayRate;
 
         std::shared_ptr<AudioSource> _audioSrc;
+        int _dupFD;
 
 
         volatile int _currentBufIndex;

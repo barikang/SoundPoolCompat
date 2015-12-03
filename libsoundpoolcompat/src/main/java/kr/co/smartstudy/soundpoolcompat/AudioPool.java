@@ -122,6 +122,7 @@ public class AudioPool {
         else
         {
             AudioSource audioSrc = AudioSource.createFromFD(fd,offset,length);
+            mAudioSources.append(audioSrc.getAudioID(), audioSrc);
             mOnCreateAudioSourceCompleteListener.onCreateAudioSourceComplete(audioSrc,!audioSrc.isReleased());
             return audioSrc.getAudioID();
         }

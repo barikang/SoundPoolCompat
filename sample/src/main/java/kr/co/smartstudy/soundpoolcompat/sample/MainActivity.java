@@ -18,7 +18,7 @@ public class MainActivity extends AppCompatActivity {
 
     int mLastStreamID = 0;
     int mAudioID1 = 0;
-    SoundPoolCompat mSoundPool = new SoundPoolCompat(4, AudioManager.STREAM_MUSIC,true);
+    SoundPoolCompat mSoundPool = new SoundPoolCompat(4, AudioManager.STREAM_MUSIC,true,true);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

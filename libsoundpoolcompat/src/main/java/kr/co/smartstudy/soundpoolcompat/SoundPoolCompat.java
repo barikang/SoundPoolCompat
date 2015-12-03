@@ -38,7 +38,7 @@ public class SoundPoolCompat {
      * @return a SoundPoolCompat object, or null if creation failed
      */
     public SoundPoolCompat(int maxStreams, int streamType, int srcQuality) {
-        this(maxStreams,streamType,Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP);
+        this(maxStreams,streamType,Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP,true);
     }
 
     /**
@@ -50,15 +50,16 @@ public class SoundPoolCompat {
      * @param streamType the audio stream type as described in AudioManager
      *                   For example, game applications will normally use
      *                   {@link AudioManager#STREAM_MUSIC}.
-     * @param useOpenSL use OpenSL ES SoundPool.
+     * @param useOpenSL use OpenSL ES AudioPool.
+     * @param tryPreDecode when using OpenSL ES, use predecoding.(available if >JELLYBEAN)
      * @return a SoundPoolCompat object, or null if creation failed
      */
-    public SoundPoolCompat(int maxStreams, int streamType,boolean useOpenSL) {
+    public SoundPoolCompat(int maxStreams, int streamType,boolean useOpenSL,boolean tryPreDecode) {
         mLock = new Object();
         mUseOpenSLES = useOpenSL;
         if(mUseOpenSLES)
         {
-            mAudioPool = new AudioPool(streamType);
+            mAudioPool = new AudioPool(streamType,tryPreDecode);
         }
         else
         {

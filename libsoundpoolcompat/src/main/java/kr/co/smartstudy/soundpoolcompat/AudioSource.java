@@ -138,7 +138,6 @@ public class AudioSource {
                         int sampleSize = extractor.readSampleData(dstBuf, 0 /* offset */);
                         long presentationTimeUs = 0;
                         if (sampleSize < 0) {
-                            Log.d(TAG, "saw input EOS.");
                             sawInputEOS = true;
                             sampleSize = 0;
                         } else {
@@ -182,20 +181,18 @@ public class AudioSource {
                     codec.releaseOutputBuffer(outputBufIndex, false /* render */);
 
                     if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                        Log.d(TAG, "saw output EOS.");
                         sawOutputEOS = true;
                     }
 
                 } else if (outputBufIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
                     if (useBuffersUnder21)
                         codecOutputBuffers = codec.getOutputBuffers();
-                    Log.d(TAG, "output buffers have changed.");
+                    //Log.d(TAG, "output buffers have changed.");
                 } else if (outputBufIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat oformat = codec.getOutputFormat();
-
-                    Log.d(TAG, "output format has changed to " + oformat);
+                    //Log.d(TAG, "output format has changed to " + oformat);
                 } else {
-                    Log.d(TAG, "dequeueOutputBuffer returned " + outputBufIndex);
+                    //Log.d(TAG, "dequeueOutputBuffer returned " + outputBufIndex);
                 }
             }
 
@@ -206,8 +203,8 @@ public class AudioSource {
             final int channelCount = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
             final int sampleRate = outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
 
-            Log.i(TAG, "Duraiton " + duration + " chl:" + channelCount + " sampleRate:" + sampleRate);
-            Log.i(TAG, "total output size = " + totalOutputSize);
+            Log.i(TAG, String.format("[%d] duration : %d chl: %d samplerate:%d",audioID,duration,channelCount,sampleRate));
+            //Log.i(TAG, "total output size = " + totalOutputSize);
 
             if(false == nativeSetAudioSourcePCM(audioID,channelCount,sampleRate,16))
                 throw new IllegalStateException();
