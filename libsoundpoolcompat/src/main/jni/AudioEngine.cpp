@@ -1,223 +1,16 @@
 #include "AudioEngine.h"
 #include "kr_co_smartstudy_soundpoolcompat_AudioEngine.h"
-#include "AudioEngine.h"
+#include "AudioPlayer.h"
 #include "utils.h"
 #include <inttypes.h>
+
+#define DELAY_TIME_TO_REMOVE    (0.5f)
+#define MAX_AUDIOPLAYER_COUNT   (32)
 
 //
 // Created by barikang on 2015. 11. 24..
 //
-
 using namespace SoundPoolCompat;
-
-#define DELAY_TIME_TO_REMOVE 0.5f
-#define MAX_AUDIOPLAYER_COUNT (32)
-
-
-void bqAudioPlayer_Callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context)
-{
-    AudioPlayer* pAudioPlayer = (AudioPlayer*)context;
-    if(pAudioPlayer->enqueueBuffer() == false)
-    {
-        LOGD("[%d] enqueueBuffer end",pAudioPlayer->_streamID);
-    }
-}
-
-void bqAudioPlayer_Callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 playEvent)
-{
-    if (context && (playEvent & SL_PLAYEVENT_HEADATEND) > 0)
-    {
-        AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
-        LOGD("[%d] callback playevent : end",pAudioPlayer->_streamID);
-        auto pEngine = AudioEngine::getInstance();
-        if(pEngine)
-            pEngine->enqueueFinishedPlay(pAudioPlayer->_streamID);
-    }
-}
-
-
-AudioPlayer::AudioPlayer()
-        : _fdPlayerObject(nullptr)
-        , _playOver(false)
-        , _repeatCount(0)
-        , _streamID(0)
-        , _stoppedTime(0.0f)
-        , _currentBufIndex(0)
-{
-
-}
-
-AudioPlayer::~AudioPlayer()
-{
-    if (_fdPlayerObject)
-    {
-        (*_fdPlayerObject)->Destroy(_fdPlayerObject);
-        _fdPlayerObject = nullptr;
-        _fdPlayerPlay = nullptr;
-        _fdPlayerVolume = nullptr;
-        _fdPlayerBufferQueue = nullptr;
-        _fdPlayerPrefetchStatus = nullptr;
-        _fdPlayerConfig = nullptr;
-        LOGD("[%d] AudioPlayer destoryed",_streamID);
-    }
-
-}
-
-bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
-                            std::shared_ptr<AudioSource> pAudioSrc,
-                           float volume, int repeatCount,SLint32 androidStreamType)
-{
-    bool ret = false;
-    if(volume < 0.0f )
-        volume = 0.0f;
-    else if (volume > 1.0f)
-        volume = 1.0f;
-
-    _streamID = streamID;
-
-    do {
-        _audioSrc = pAudioSrc;
-        _repeatCount = repeatCount;
-
-        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM) {
-            SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {
-                    SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
-            SLuint32 containerSize = 8;
-            const int bitPerSample = _audioSrc->_pcm_bitPerSample;
-            const int samplingRate = _audioSrc->_pcm_samplingRate;
-            const int numChannels = _audioSrc->_pcm_numChannels;
-            if (bitPerSample == 8)
-                containerSize = 8;
-            else if (bitPerSample == 16)
-                containerSize = 16;
-            else if (bitPerSample > 16)
-                containerSize = 32;
-            else {
-                LOGD("Not suppoert bitPerSample %d", bitPerSample);
-            }
-            SLuint32 speaker = numChannels == 1 ? SL_SPEAKER_FRONT_CENTER : SL_SPEAKER_FRONT_LEFT |
-                                                                            SL_SPEAKER_FRONT_RIGHT;
-            SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, (SLuint32) numChannels,
-                                           (SLuint32) (samplingRate * 1000),
-                                           (SLuint32) bitPerSample, containerSize,
-                                           speaker, SL_BYTEORDER_LITTLEENDIAN};
-            SLDataSource audioSrc = {&loc_bufq, &format_pcm};
-
-            // configure audio sink
-            SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, outputMixObject};
-            SLDataSink audioSnk = {&loc_outmix, NULL};
-
-            // create audio player
-            const SLInterfaceID ids[4] = {SL_IID_ANDROIDSIMPLEBUFFERQUEUE, SL_IID_VOLUME,
-                                          SL_IID_PLAY, SL_IID_ANDROIDCONFIGURATION};
-            const SLboolean req[4] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE,
-                                      SL_BOOLEAN_TRUE};
-            auto result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
-                                                             &audioSrc, &audioSnk, 4, ids, req);
-            if (SL_RESULT_SUCCESS != result) {
-                LOGE("create audio player fail");
-                break;
-            }
-
-        }
-        else if (_audioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
-
-        }
-        else if (_audioSrc->_type == AudioSource::AudioSourceType::Uri) {
-
-        }
-
-        // set configuration before realize
-        auto result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDCONFIGURATION,
-                                                       &_fdPlayerConfig);
-        if (SL_RESULT_SUCCESS != result) { LOGE("get the config interface fail"); break; };
-        (*_fdPlayerConfig)->SetConfiguration(_fdPlayerConfig, SL_ANDROID_KEY_STREAM_TYPE,
-                                             &androidStreamType, sizeof(SLint32));
-
-        // realize the player
-        result = (*_fdPlayerObject)->Realize(_fdPlayerObject, SL_BOOLEAN_FALSE);
-        if (SL_RESULT_SUCCESS != result) { LOGE("realize the player fail"); break; }
-
-        // get the play interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_PLAY, &_fdPlayerPlay);
-        if (SL_RESULT_SUCCESS != result) { LOGE("get the play interface fail"); break; }
-
-        (*_fdPlayerPlay)->SetCallbackEventsMask(_fdPlayerPlay, SL_PLAYEVENT_HEADATEND);
-        result = (*_fdPlayerPlay)->RegisterCallback(_fdPlayerPlay, bqAudioPlayer_Callback_PlayerPlay,
-                                                    this);
-        if (SL_RESULT_SUCCESS != result) { LOGE("register play callback fail");break; }
-
-
-        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM)
-        {
-            // get the bufferqueue interface
-            result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
-                                                      &_fdPlayerBufferQueue);
-            if (SL_RESULT_SUCCESS != result) {LOGE("get the bufferqueue interface fail");break; };
-
-            // register callback on the buffer queue
-            result = (*_fdPlayerBufferQueue)->RegisterCallback(_fdPlayerBufferQueue, bqAudioPlayer_Callback_SimpleBufferQueue,this);
-            if(SL_RESULT_SUCCESS != result){ LOGE("register buffer queue callback fail"); break; }
-
-        }
-
-        // get the volume interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_VOLUME, &_fdPlayerVolume);
-        if(SL_RESULT_SUCCESS != result){ LOGE("get the volume interface fail"); break; }
-
-
-        int dbVolume = 2000 * log10(volume);
-        if(dbVolume < SL_MILLIBEL_MIN){
-            dbVolume = SL_MILLIBEL_MIN;
-        }
-        (*_fdPlayerVolume)->SetVolumeLevel(_fdPlayerVolume, dbVolume);
-        result = (*_fdPlayerPlay)->SetPlayState(_fdPlayerPlay, SL_PLAYSTATE_PLAYING);
-        if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState fail"); break; }
-
-        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM)
-        {
-            enqueueBuffer();
-        }
-
-        ret = true;
-    } while (0);
-
-    return ret;
-}
-
-bool AudioPlayer::enqueueBuffer()
-{
-    bool ret = false;
-    if(_audioSrc != nullptr && _currentBufIndex < _audioSrc->_pcm_nativeBuffers.size())
-    {
-        //LOGD("enqueueBuffer %d/%d",_currentBufIndex,(int)_nativeBufIds.size());
-
-        auto pBuffer = _audioSrc->getPCMBuffer(_currentBufIndex);
-        if(pBuffer != nullptr)
-        {
-            _currentBufIndex++;
-            SLresult result = (*_fdPlayerBufferQueue)->Enqueue(_fdPlayerBufferQueue, pBuffer->ptr, pBuffer->size);
-            ret = SL_RESULT_SUCCESS == result;
-            if(SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u",(unsigned int)result); };
-        }
-    }
-    return ret;
-
-}
-
-void AudioPlayer::resetBuffer()
-{
-    if(_audioSrc != nullptr && _audioSrc->_type == AudioSource::AudioSourceType::PCM)
-    {
-        _currentBufIndex = 0;
-        auto result = (*_fdPlayerBufferQueue)->Clear(_fdPlayerBufferQueue);
-        if(SL_RESULT_SUCCESS != result) { LOGE("Queue clear error : %u",(unsigned int)result); };
-    }
-
-}
-
-
-///////////////////////////////
 
 std::shared_ptr<AudioEngine> AudioEngine::g_audioEngine(nullptr);
 int AudioEngine::g_refCount = 0;
@@ -255,65 +48,6 @@ double AudioEngine::getCurrentTime() {
     return (double)tv.tv_sec + (double)tv.tv_usec/1000000;
 }
 
-JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeInitilizeAudioEngine
-        (JNIEnv *env, jclass clasz)
-{
-
-    AudioEngine::initialize();
-}
-
-JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeReleaseAudioEngine
-        (JNIEnv *env, jclass clasz)
-{
-    AudioEngine::release();
-}
-
-JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePlayAudio
-        (JNIEnv *env, jclass clasz, jint audioID, jint repeatCount, jfloat volume,jint androidStreamType)
-{
-    jint ret = -1;
-    auto pEngine = AudioEngine::getInstance();
-    if(pEngine)
-    {
-        ret = pEngine->playAudio(audioID,repeatCount,volume,(SLint32)androidStreamType);
-    }
-
-    return ret;
-
-}
-
-JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePause
-        (JNIEnv *env, jclass clasz, jint streamID)
-{
-    auto pEngine = AudioEngine::getInstance();
-    if(pEngine)
-    {
-        pEngine->pause(streamID);
-    }
-
-}
-
-JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeStop
-        (JNIEnv *env, jclass clasz, jint streamID)
-{
-    auto pEngine = AudioEngine::getInstance();
-    if(pEngine)
-    {
-        pEngine->stop(streamID);
-    }
-
-}
-
-JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeResume
-        (JNIEnv *env, jclass clasz, jint streamID)
-{
-    auto pEngine = AudioEngine::getInstance();
-    if(pEngine)
-    {
-        pEngine->resume(streamID);
-    }
-
-}
 
 
 void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
@@ -344,10 +78,8 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
             if(pAudioPlayer->_repeatCount != 0)
             {
                 do {
-                    pAudioPlayer->resetBuffer();
-                    auto result = (*pAudioPlayer->_fdPlayerPlay)->SetPlayState(pAudioPlayer->_fdPlayerPlay, SL_PLAYSTATE_PLAYING);
-                    if (SL_RESULT_SUCCESS != result) { LOGE("SetPlayState fail"); break; };
-                    pAudioPlayer->enqueueBuffer();
+                    if(!pAudioPlayer->play())
+                        break;
                     doStop = false;
 
                 } while(0);
@@ -355,8 +87,7 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
             if(doStop)
             {
-                pAudioPlayer->_playOver = true;
-                pAudioPlayer->_stoppedTime = AudioEngine::getCurrentTime();
+                pAudioPlayer->stop();
             }
 
         }
@@ -395,7 +126,7 @@ AudioEngine::~AudioEngine()
     }
 
 
-    stopAll(true);
+    stopAll(0,true);
 
     if (_outputMixObject)
     {
@@ -459,7 +190,8 @@ bool AudioEngine::init()
     return ret;
 
 }
-int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType)
+
+int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate)
 {
     int streamID = -1;
 
@@ -476,9 +208,13 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         }
 
         auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
+        if(pAudioSrc == nullptr)
+            break;
+
         const int newStreamID = _currentAudioStreamID.fetch_add(1);
         AudioPlayer *pPlayer = nullptr;
         _recurMutex.lock();
+        // create audio player
         pPlayer = &_audioPlayers[newStreamID];
         _recurMutex.unlock();
 
@@ -487,7 +223,7 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         if(repeatCount == 0)
             repeatCount = 1;
 
-        auto initPlayer = pPlayer->init(streamID,_engineEngine, _outputMixObject,pAudioSrc,volume, repeatCount,androidStreamType);
+        auto initPlayer = pPlayer->init(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
         if (!initPlayer){
             _recurMutex.lock();
             _audioPlayers.erase(newStreamID);
@@ -495,6 +231,12 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
             LOGE( "%s,%d message:create player fail", __func__, __LINE__);
             break;
         }
+
+        pPlayer->setVolume(volume);
+        pPlayer->setPlayRate(playRate);
+        pPlayer->setRepeatCount(repeatCount);
+        pPlayer->play();
+
 
     } while (0);
 
@@ -519,31 +261,14 @@ int AudioEngine::releaseUnusedAudioPlayer()
 }
 
 
-void AudioEngine::setVolume(int streamID,float volume)
-{
-    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
-    auto pPlayer = getAudioPlayer(streamID);
-    if(pPlayer) {
-        int dbVolume = 2000 * log10(volume);
-        if (dbVolume < SL_MILLIBEL_MIN) {
-            dbVolume = SL_MILLIBEL_MIN;
-        }
-        auto result = (*pPlayer->_fdPlayerVolume)->SetVolumeLevel(pPlayer->_fdPlayerVolume, dbVolume);
-        if (SL_RESULT_SUCCESS != result) {
-            LOGE("%s error:%u", __func__, (unsigned int) result);
-        }
-    }
 
-}
+
 void AudioEngine::pause(int streamID)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     auto pPlayer = getAudioPlayer(streamID);
     if(pPlayer) {
-        auto result = (*pPlayer->_fdPlayerPlay)->SetPlayState(pPlayer->_fdPlayerPlay,SL_PLAYSTATE_PAUSED);
-        if (SL_RESULT_SUCCESS != result) {
-            LOGE("%s error:%u", __func__, (unsigned int) result);
-        }
+        pPlayer->pause();
     }
 
 }
@@ -552,10 +277,7 @@ void AudioEngine::resume(int streamID)
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     auto pPlayer = getAudioPlayer(streamID);
     if(pPlayer) {
-        auto result = (*pPlayer->_fdPlayerPlay)->SetPlayState(pPlayer->_fdPlayerPlay,SL_PLAYSTATE_PLAYING);
-        if (SL_RESULT_SUCCESS != result) {
-            LOGE("%s error:%u", __func__, (unsigned int) result);
-        }
+        pPlayer->resume();
     }
 
 }
@@ -564,21 +286,7 @@ void AudioEngine::stop(int streamID)
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     auto pPlayer = getAudioPlayer(streamID);
     if(pPlayer) {
-        auto result = (*pPlayer->_fdPlayerPlay)->SetPlayState(pPlayer->_fdPlayerPlay, SL_PLAYSTATE_STOPPED);
-        if(SL_RESULT_SUCCESS != result){
-            LOGE("%s error:%u",__func__, (unsigned int)result);
-        }
-
-        /*If destroy openSL object immediately,it may cause dead lock.
-         *It's a system issue.For more information:
-         *    https://github.com/cocos2d/cocos2d-x/issues/11697
-         *    https://groups.google.com/forum/#!msg/android-ndk/zANdS2n2cQI/AT6q1F3nNGIJ
-         */
-        if(pPlayer->_playOver == false) {
-            pPlayer->_stoppedTime = AudioEngine::getCurrentTime();
-            pPlayer->_playOver = true;
-        }
-        //_audioPlayers.erase(streamID);
+        pPlayer->stop();
     }
 }
 float AudioEngine::getCurrentTime(int streamID)
@@ -593,28 +301,18 @@ float AudioEngine::getCurrentTime(int streamID)
 
 }
 
-void AudioEngine::stopAll(bool wait)
+void AudioEngine::stopAll(int streamGroupID,bool wait)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+    std::vector<int> removeStreamIDS;
     double maxRemoveTime = 0;
-    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++)
-    {
+    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
         auto pPlayer = &iter->second;
-        SLuint32 state;
-        auto result = (*pPlayer->_fdPlayerPlay)->GetPlayState(pPlayer->_fdPlayerPlay, &state);
-        if(SL_RESULT_SUCCESS == result){
-            if(state != SL_PLAYSTATE_STOPPED)
-            {
-                result = (*pPlayer->_fdPlayerPlay)->SetPlayState(pPlayer->_fdPlayerPlay, SL_PLAYSTATE_STOPPED);
-                if(SL_RESULT_SUCCESS != result) { LOGE("%s error:%u",__func__, (unsigned int)result); };
-            }
+        if (streamGroupID == 0 || pPlayer->_streamGroupID == streamGroupID) {
+            removeStreamIDS.push_back(iter->first);
+            pPlayer->stop();
+            maxRemoveTime = std::max(maxRemoveTime, pPlayer->_stoppedTime + DELAY_TIME_TO_REMOVE);
         }
-        if(pPlayer->_playOver == false) {
-            pPlayer->_stoppedTime = AudioEngine::getCurrentTime();
-            pPlayer->_playOver = true;
-        }
-
-        maxRemoveTime = std::max(maxRemoveTime,pPlayer->_stoppedTime+DELAY_TIME_TO_REMOVE);
     }
 
     if(wait) {
@@ -625,7 +323,182 @@ void AudioEngine::stopAll(bool wait)
         }
     }
 
-    _audioPlayers.clear();
+    for(auto iter = removeStreamIDS.begin() ; iter != removeStreamIDS.end(); iter++) {
+        _audioPlayers.erase(*iter);
+    }
+}
 
+void AudioEngine::pauseAll(int streamGroupID) {
+    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
+        auto pPlayer = &iter->second;
+        if (pPlayer->_streamGroupID == streamGroupID) {
+            pPlayer->pause();
+        }
+    }
+
+}
+
+void AudioEngine::resumeAll(int streamGroupID) {
+    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
+        auto pPlayer = &iter->second;
+        if (pPlayer->_streamGroupID == streamGroupID) {
+            pPlayer->resume();
+        }
+    }
+}
+
+void AudioEngine::setVolume(int streamID,float volume)
+{
+    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+    auto pPlayer = getAudioPlayer(streamID);
+    if(pPlayer) {
+        pPlayer->setVolume(volume);
+    }
+
+}
+void AudioEngine::setPlayRate(int streamID,float playRate)
+{
+    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+    auto pPlayer = getAudioPlayer(streamID);
+    if(pPlayer) {
+        pPlayer->setPlayRate(playRate);
+    }
+
+}
+void AudioEngine::setRepeatCount(int streamID,int repeatCount)
+{
+    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+    auto pPlayer = getAudioPlayer(streamID);
+    if(pPlayer) {
+        pPlayer->setRepeatCount(repeatCount);
+    }
+
+}
+
+
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeInitilizeAudioEngine
+        (JNIEnv *env, jclass clasz)
+{
+
+    AudioEngine::initialize();
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeReleaseAudioEngine
+        (JNIEnv *env, jclass clasz)
+{
+    AudioEngine::release();
+}
+
+JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePlayAudio
+        (JNIEnv *env, jclass clasz, jint audioID, jint repeatCount, jfloat volume,jint androidStreamType,jint streamGroupID, jfloat playRate)
+{
+    jint ret = -1;
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        ret = pEngine->playAudio(audioID,repeatCount,volume,(SLint32)androidStreamType,streamGroupID,playRate);
+    }
+
+    return ret;
+
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePause
+        (JNIEnv *env, jclass clasz, jint streamID)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->pause(streamID);
+    }
+
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeStop
+        (JNIEnv *env, jclass clasz, jint streamID)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->stop(streamID);
+    }
+
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeResume
+        (JNIEnv *env, jclass clasz, jint streamID)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->resume(streamID);
+    }
+
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePauseAll
+        (JNIEnv *, jclass, jint streamGroupID)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->pauseAll(streamGroupID);
+    }
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeResumeAll
+        (JNIEnv *, jclass, jint streamGroupID)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->resumeAll(streamGroupID);
+    }
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeStopAll
+        (JNIEnv *, jclass, jint streamGroupID)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->stopAll(streamGroupID,false);
+    }
+
+}
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeSetVolume
+        (JNIEnv *, jclass, jint streamID, jfloat volume)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->setVolume(streamID,volume);
+    }
+
+
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeSetPlayRate
+        (JNIEnv *, jclass, jint streamID, jfloat playRate)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->setPlayRate(streamID,playRate);
+    }
+
+}
+
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeSetRepeatCount
+        (JNIEnv *, jclass, jint streamID, jint repeatCount)
+{
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        pEngine->setRepeatCount(streamID,repeatCount);
+    }
 
 }

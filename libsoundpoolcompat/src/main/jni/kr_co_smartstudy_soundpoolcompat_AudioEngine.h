@@ -38,10 +38,10 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeR
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
  * Method:    nativePlayAudio
- * Signature: (IIFI)I
+ * Signature: (IIFIIF)I
  */
 JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePlayAudio
-  (JNIEnv *, jclass, jint, jint, jfloat, jint);
+  (JNIEnv *, jclass, jint, jint, jfloat, jint, jint, jfloat);
 
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
@@ -66,6 +66,54 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeS
  */
 JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeResume
   (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativePauseAll
+ * Signature: (I)V
+ */
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePauseAll
+  (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativeResumeAll
+ * Signature: (I)V
+ */
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeResumeAll
+  (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativeStopAll
+ * Signature: (I)V
+ */
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeStopAll
+  (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativeSetVolume
+ * Signature: (IF)V
+ */
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeSetVolume
+  (JNIEnv *, jclass, jint, jfloat);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativeSetPlayRate
+ * Signature: (IF)V
+ */
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeSetPlayRate
+  (JNIEnv *, jclass, jint, jfloat);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativeSetRepeatCount
+ * Signature: (II)V
+ */
+JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeSetRepeatCount
+  (JNIEnv *, jclass, jint, jint);
 
 #ifdef __cplusplus
 }

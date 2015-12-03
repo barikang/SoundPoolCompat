@@ -1,10 +1,12 @@
 package kr.co.smartstudy.soundpoolcompat;
 
 import android.annotation.TargetApi;
+import android.content.res.AssetFileDescriptor;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.os.Build;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import java.io.FileDescriptor;
@@ -213,6 +215,7 @@ public class AudioSource {
                 throw new IllegalStateException();
 
         }catch (Exception e) {
+            Log.e(TAG,"",e);
             ret = false;
         }
         finally {
@@ -237,23 +240,41 @@ public class AudioSource {
         return audioSrc;
     }
 
+    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)
     public static AudioSource createPCMFromFDAsync(final FileDescriptor fd, final long fdOffset,final long fdLength
             ,final Executor executor,final OnCreateAudioSourceComplete listener) {
-        final AudioSource audioSrc = new AudioSource();
 
-        executor.execute(new Runnable() {
+        final AudioSource audioSrc = new AudioSource();
+        ParcelFileDescriptor dupFD = null;
+        try {
+             dupFD =  ParcelFileDescriptor.dup(fd);
+        } catch (IOException e) {
+            Log.e(TAG, "", e);
+        }
+        final ParcelFileDescriptor fdupFD = dupFD;
+        Runnable decodeRun = new Runnable() {
             @Override
             public void run() {
-                final boolean decodeResult = decodeAndBindPCM(audioSrc,fd,fdOffset,fdLength);
+                final boolean decodeResult = decodeAndBindPCM(audioSrc,fdupFD.getFileDescriptor(),fdOffset,fdLength);
+                try {
+                    fdupFD.close();
+                } catch (IOException e) {
+                    Log.e(TAG,"",e);
+                }
                 if(!decodeResult)
                 {
+                    Log.e(TAG,"Decoding is failed");
                     audioSrc.release();
                 }
                 if(listener != null)
                     listener.onCreateAudioSourceComplete(audioSrc,decodeResult);
 
             }
-        });
+        };
+        if(executor != null)
+            executor.execute(decodeRun);
+        else
+            decodeRun.run();
         return audioSrc;
     }
 

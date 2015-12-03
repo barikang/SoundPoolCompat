@@ -1,6 +1,7 @@
 package kr.co.smartstudy.soundpoolcompat.sample;
 
 import android.content.res.AssetFileDescriptor;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.view.View;
@@ -10,13 +11,14 @@ import java.util.Random;
 
 import kr.co.smartstudy.soundpoolcompat.AudioEngine;
 import kr.co.smartstudy.soundpoolcompat.AudioSource;
+import kr.co.smartstudy.soundpoolcompat.SoundPoolCompat;
 
 public class MainActivity extends AppCompatActivity {
 
 
-    AudioSource mAudioSrc1;
-    AudioEngine mAudioEngine;
     int mLastStreamID = 0;
+    int mAudioID1 = 0;
+    SoundPoolCompat mSoundPool = new SoundPoolCompat(4, AudioManager.STREAM_MUSIC,true);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,23 +28,23 @@ public class MainActivity extends AppCompatActivity {
         AssetFileDescriptor fd = getResources().openRawResourceFd(R.raw.numbers_en_1);
 
         try {
-            mAudioSrc1 = AudioSource.createPCMFromFD(fd.getFileDescriptor(), fd.getStartOffset(), fd.getLength());
+            mAudioID1 = mSoundPool.load(fd.getFileDescriptor(), fd.getStartOffset(), fd.getLength(), 0);
             fd.close();
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
 
-        mAudioEngine = new AudioEngine();
         findViewById(R.id.btn_test).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mLastStreamID = mAudioEngine.playAudio(mAudioSrc1, 2, 1.0f,AudioEngine.ANDROID_STREAM_SYSTEM);
+                mLastStreamID = mSoundPool.play(mAudioID1,1.0f,1.0f,0,0,1.0f);
             }
         });
+
         findViewById(R.id.btn_test2).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mAudioEngine.stop(mLastStreamID);
+                mSoundPool.stop(mLastStreamID);
             }
         });
 
@@ -59,7 +61,7 @@ public class MainActivity extends AppCompatActivity {
                             {
                                 try {
                                     Thread.sleep(30+rand.nextInt(100));
-                                    int id = mAudioEngine.playAudio(mAudioSrc1, 0, 1.0f,AudioEngine.ANDROID_STREAM_SYSTEM);
+                                    mSoundPool.play(mAudioID1,1.0f,1.0f,0,0,1.0f);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
