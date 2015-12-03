@@ -46,7 +46,6 @@ namespace SoundPoolCompat {
         int _fd;
         int64_t _fd_offset;
         int64_t _fd_length;
-        bool _fd_autoclose;
 
         std::string _uri_path;
 
@@ -62,7 +61,7 @@ namespace SoundPoolCompat {
         static bool setAudioSourcePCM(int audioID,int numChannels,int samplingRate,int bitPerSample);
         static bool addPCMBuffer(int audioID,void* pBuf,int offset,int size);
 
-        static bool setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset,int64_t length,bool autoclose = true);
+        static bool setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset,int64_t length);
         static bool setAudioSourceURI(int audioID,const std::string& uri);
 
     };

@@ -70,7 +70,7 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
         }
         // dodo~
 
-        AudioPlayer *pAudioPlayer = pAudioEngine->getAudioPlayer(streamID);
+        auto pAudioPlayer = pAudioEngine->getAudioPlayer(streamID);
         if(pAudioPlayer)
         {
             pAudioPlayer->_repeatCount--;
@@ -141,13 +141,13 @@ AudioEngine::~AudioEngine()
 
 }
 
-AudioPlayer* AudioEngine::getAudioPlayer(int streamID)
+std::shared_ptr<AudioPlayer> AudioEngine::getAudioPlayer(int streamID)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     auto iter = _audioPlayers.find(streamID);
     if(iter != _audioPlayers.end())
     {
-        return &iter->second;
+        return iter->second;
     }
     return nullptr;
 
@@ -212,10 +212,9 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
             break;
 
         const int newStreamID = _currentAudioStreamID.fetch_add(1);
-        AudioPlayer *pPlayer = nullptr;
+        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer());
         _recurMutex.lock();
-        // create audio player
-        pPlayer = &_audioPlayers[newStreamID];
+        _audioPlayers[newStreamID] = pPlayer;
         _recurMutex.unlock();
 
         streamID = newStreamID;
@@ -250,7 +249,8 @@ int AudioEngine::releaseUnusedAudioPlayer()
     const double currentTime = AudioEngine::getCurrentTime();
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end();)
     {
-        if(iter->second._playOver && currentTime-iter->second._stoppedTime  > DELAY_TIME_TO_REMOVE)
+        auto pAudioPlayer = iter->second;
+        if(pAudioPlayer->_playOver && currentTime-pAudioPlayer->_stoppedTime  > DELAY_TIME_TO_REMOVE)
         {
             iter = _audioPlayers.erase(iter);
             continue;
@@ -307,7 +307,7 @@ void AudioEngine::stopAll(int streamGroupID,bool wait)
     std::vector<int> removeStreamIDS;
     double maxRemoveTime = 0;
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
-        auto pPlayer = &iter->second;
+        auto pPlayer = iter->second;
         if (streamGroupID == 0 || pPlayer->_streamGroupID == streamGroupID) {
             removeStreamIDS.push_back(iter->first);
             pPlayer->stop();
@@ -331,7 +331,7 @@ void AudioEngine::stopAll(int streamGroupID,bool wait)
 void AudioEngine::pauseAll(int streamGroupID) {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
-        auto pPlayer = &iter->second;
+        auto pPlayer = iter->second;
         if (pPlayer->_streamGroupID == streamGroupID) {
             pPlayer->pause();
         }
@@ -342,7 +342,7 @@ void AudioEngine::pauseAll(int streamGroupID) {
 void AudioEngine::resumeAll(int streamGroupID) {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
-        auto pPlayer = &iter->second;
+        auto pPlayer = iter->second;
         if (pPlayer->_streamGroupID == streamGroupID) {
             pPlayer->resume();
         }

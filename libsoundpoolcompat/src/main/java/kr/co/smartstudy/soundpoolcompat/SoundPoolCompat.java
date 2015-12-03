@@ -13,8 +13,6 @@ import java.io.FileDescriptor;
  * Created by Jaehun on 2015. 12. 1..
  */
 public class SoundPoolCompat {
-    private static final int SAMPLE_LOADED = 1;
-
     private final static String TAG = "SoundPoolCompat";
     private final static boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
 

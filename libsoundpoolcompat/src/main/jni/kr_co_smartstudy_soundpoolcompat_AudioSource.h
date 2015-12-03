@@ -52,10 +52,10 @@ JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nat
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
  * Method:    nativeSetAudioSourceFileDescriptor
- * Signature: (ILjava/io/FileDescriptor;JJZ)Z
+ * Signature: (ILjava/io/FileDescriptor;JJ)Z
  */
 JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeSetAudioSourceFileDescriptor
-  (JNIEnv *, jclass, jint, jobject, jlong, jlong, jboolean);
+  (JNIEnv *, jclass, jint, jobject, jlong, jlong);
 
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource

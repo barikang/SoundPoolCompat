@@ -45,7 +45,7 @@ namespace SoundPoolCompat {
         void setPlayRate(int streamID,float playRate);
         void setRepeatCount(int streamID,int repeatCount);
     private:
-        AudioPlayer*  getAudioPlayer(int streamID);
+        std::shared_ptr<AudioPlayer>  getAudioPlayer(int streamID);
         int releaseUnusedAudioPlayer();
 
         bool init();
@@ -60,7 +60,7 @@ namespace SoundPoolCompat {
         SLObjectItf _outputMixObject;
 
         //streamID,AudioPlayer
-        std::unordered_map<int, AudioPlayer >  _audioPlayers;
+        std::unordered_map<int, std::shared_ptr<AudioPlayer> >  _audioPlayers;
 
         std::atomic<int> _currentAudioStreamID;
         std::recursive_mutex _recurMutex;

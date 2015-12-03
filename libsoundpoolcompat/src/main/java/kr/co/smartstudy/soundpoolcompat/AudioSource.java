@@ -29,7 +29,7 @@ public class AudioSource {
     static native boolean nativeSetAudioSourcePCM(int audioID,int numChannels,int samplingRate,int bitPerSample);
     static native boolean nativeAddPCMBuffer_DirectByteBuffer(int audioID,ByteBuffer byteBuffer,int offset,int size);
     static native boolean nativeAddPCMBuffer_ByteArray(int audioID,byte[] byteArray,int offset,int size);
-    static native boolean nativeSetAudioSourceFileDescriptor(int audioID,FileDescriptor fd,long offset,long length,boolean autoclose);
+    static native boolean nativeSetAudioSourceFileDescriptor(int audioID,FileDescriptor fd,long offset,long length);
     static native boolean nativeSetAudioSourceURI(int audioID,String uri);
 
 
@@ -73,10 +73,9 @@ public class AudioSource {
     public static AudioSource createFromFD(FileDescriptor fd, long fdOffset, long fdLength)
     {
         AudioSource audioSrc = new AudioSource();
-        if(!nativeSetAudioSourceFileDescriptor(audioSrc.getAudioID(),fd,fdOffset,fdLength,true))
+        if(!nativeSetAudioSourceFileDescriptor(audioSrc.getAudioID(),fd,fdOffset,fdLength))
         {
             audioSrc.release();
-            audioSrc = null;
         }
         return audioSrc;
     }
@@ -87,7 +86,6 @@ public class AudioSource {
         if(!nativeSetAudioSourceURI(audioSrc.getAudioID(), uri))
         {
             audioSrc.release();
-            audioSrc = null;
         }
         return audioSrc;
     }
@@ -240,7 +238,7 @@ public class AudioSource {
         return audioSrc;
     }
 
-    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     public static AudioSource createPCMFromFDAsync(final FileDescriptor fd, final long fdOffset,final long fdLength
             ,final Executor executor,final OnCreateAudioSourceComplete listener) {
 

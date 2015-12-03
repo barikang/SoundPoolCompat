@@ -1,7 +1,9 @@
 package kr.co.smartstudy.soundpoolcompat;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -33,16 +35,23 @@ public class AudioPool {
 
     private EventHandler mEventHandler;
     private AudioPool.OnLoadCompleteListener mOnLoadCompleteListener;
-    private final Object mLock;
-    private AudioEngine mAudioEngine;
-    private ThreadPoolExecutor mThreadPool = new ThreadPoolExecutor(4,4,1, TimeUnit.SECONDS,new LinkedBlockingQueue<Runnable>());
-    private SparseArray<AudioSource> mAudioSources = new SparseArray<>();
+    final private Object mLock;
+    final private AudioEngine mAudioEngine;
+    final private ThreadPoolExecutor mThreadPool;
+    final private SparseArray<AudioSource> mAudioSources = new SparseArray<>();
     private final int mAudioStreamType;
+    private boolean mTryPreDecode = true;
 
     public AudioPool(int streamType) {
+        this(streamType,true);
+    }
+
+    public AudioPool(int streamType,boolean tryPreDecode) {
         mLock = new Object();
         mAudioEngine = new AudioEngine();
         mAudioStreamType = streamType;
+        mTryPreDecode = tryPreDecode;
+        mThreadPool = new ThreadPoolExecutor(4,4,1, TimeUnit.SECONDS,new LinkedBlockingQueue<Runnable>());
     }
 
     public void release() {
@@ -105,9 +114,17 @@ public class AudioPool {
     };
 
     public final int loadAsync(FileDescriptor fd, long offset, long length) {
-        AudioSource audioSrc =AudioSource.createPCMFromFDAsync(fd, offset, length, mThreadPool, mOnCreateAudioSourceCompleteListener);
-        mAudioSources.append(audioSrc.getAudioID(),audioSrc);
-        return audioSrc.getAudioID();
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN && mTryPreDecode) {
+            AudioSource audioSrc = AudioSource.createPCMFromFDAsync(fd, offset, length, mThreadPool, mOnCreateAudioSourceCompleteListener);
+            mAudioSources.append(audioSrc.getAudioID(), audioSrc);
+            return audioSrc.getAudioID();
+        }
+        else
+        {
+            AudioSource audioSrc = AudioSource.createFromFD(fd,offset,length);
+            mOnCreateAudioSourceCompleteListener.onCreateAudioSourceComplete(audioSrc,!audioSrc.isReleased());
+            return audioSrc.getAudioID();
+        }
     }
 
     public final int play(int soundID, float leftVolume, float rightVolume,
