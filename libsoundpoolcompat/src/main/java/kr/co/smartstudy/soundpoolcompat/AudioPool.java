@@ -116,21 +116,59 @@ public class AudioPool {
     public final int loadAsync(FileDescriptor fd, long offset, long length) {
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN && mTryPreDecode) {
             AudioSource audioSrc = AudioSource.createPCMFromFDAsync(fd, offset, length, mThreadPool, mOnCreateAudioSourceCompleteListener);
-            mAudioSources.append(audioSrc.getAudioID(), audioSrc);
+            synchronized (mAudioSources) {
+                mAudioSources.append(audioSrc.getAudioID(), audioSrc);
+            }
             return audioSrc.getAudioID();
         }
         else
         {
-            AudioSource audioSrc = AudioSource.createFromFD(fd,offset,length);
-            mAudioSources.append(audioSrc.getAudioID(), audioSrc);
+            AudioSource audioSrc = AudioSource.createFromFD(fd, offset, length);
+            synchronized (mAudioSources) {
+                mAudioSources.append(audioSrc.getAudioID(), audioSrc);
+            }
             mOnCreateAudioSourceCompleteListener.onCreateAudioSourceComplete(audioSrc,!audioSrc.isReleased());
             return audioSrc.getAudioID();
         }
     }
 
+    public final boolean unload(int audioID)
+    {
+        AudioSource audioSrc = null;
+        synchronized (mAudioSources)
+        {
+            audioSrc = mAudioSources.get(audioID);
+            mAudioSources.remove(audioID);
+        }
+        if(audioSrc != null) {
+            audioSrc.release();
+        }
+
+        return audioSrc != null;
+    }
+
+    public final void unloadAll()
+    {
+        stopAll();
+        synchronized (mAudioSources)
+        {
+            final int size = mAudioSources.size();
+            for (int i = 0; i < size; i++) {
+                AudioSource audioSrc = mAudioSources.valueAt(i);
+                if(audioSrc != null)
+                    audioSrc.release();
+            }
+            mAudioSources.clear();
+        }
+    }
+
+
     public final int play(int soundID, float leftVolume, float rightVolume,
                           int priority, int loop, float rate) {
-        AudioSource audioSrc = mAudioSources.get(soundID);
+        AudioSource audioSrc = null;
+        synchronized (mAudioSources) {
+            audioSrc = mAudioSources.get(soundID);
+        }
         if(audioSrc != null)
         {
             return mAudioEngine.playAudio(audioSrc,loop,(leftVolume+rightVolume)/2,mAudioStreamType ,rate);

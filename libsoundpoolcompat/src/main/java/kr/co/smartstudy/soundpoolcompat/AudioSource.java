@@ -93,6 +93,7 @@ public class AudioSource {
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     private static boolean decodeAndBindPCM(AudioSource audioSrc,FileDescriptor fd, long fdOffset, long fdLength)
     {
+        final long startTime = System.currentTimeMillis();
         boolean ret = true;
         final int audioID = audioSrc.getAudioID();
         MediaExtractor extractor = new MediaExtractor();
@@ -153,7 +154,7 @@ public class AudioSource {
                             extractor.advance();
                         }
                     } else {
-                        Log.e(TAG, "dequeueInputBuffer error");
+                        //Log.e(TAG, "dequeueInputBuffer error");
                     }
                 }
 
@@ -202,8 +203,9 @@ public class AudioSource {
             final long duration = format.getLong(MediaFormat.KEY_DURATION);
             final int channelCount = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
             final int sampleRate = outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+            final long decodingTime = System.currentTimeMillis() - startTime;
 
-            Log.i(TAG, String.format("[%d] duration : %d chl: %d samplerate:%d",audioID,duration,channelCount,sampleRate));
+            Log.i(TAG, String.format("[%d] duration : %d chl: %d samplerate:%d decoding time : %dms",audioID,duration,channelCount,sampleRate,decodingTime));
             //Log.i(TAG, "total output size = " + totalOutputSize);
 
             if(false == nativeSetAudioSourcePCM(audioID,channelCount,sampleRate,16))
@@ -227,11 +229,13 @@ public class AudioSource {
 
     public static AudioSource createPCMFromFD(FileDescriptor fd, long fdOffset, long fdLength) {
         AudioSource audioSrc = new AudioSource();
+
         if(!decodeAndBindPCM(audioSrc,fd,fdOffset,fdLength))
         {
             audioSrc.release();
             audioSrc = null;
         }
+
         return audioSrc;
     }
 

@@ -13,18 +13,18 @@
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="test"
-        android:id="@+id/btn_test"/>
+        android:text="load sounds"
+        android:id="@+id/btn_load"/>
 
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="test2"
-        android:id="@+id/btn_test2"/>
+        android:text="unload all"
+        android:id="@+id/btn_unloadAll"/>
 
     <Button
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="test3"
-        android:id="@+id/btn_test3"/>
+        android:text="plays random"
+        android:id="@+id/btn_plays"/>
 </LinearLayout>

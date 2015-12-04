@@ -266,6 +266,7 @@ bool AudioPlayer::enqueueBuffer() {
                                                                        pBuffer->size);
                     ret = SL_RESULT_SUCCESS == result;
                     if (SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u", (unsigned int) result); };
+
                 }
             }
         }
@@ -383,10 +384,6 @@ void AudioPlayer::stop()
     if(_playOver == false) {
         _stoppedTime = AudioEngine::getCurrentTime();
         _playOver = true;
-
-        _pAudioEngine->_recurMutex.lock();
-        _pAudioEngine->_audioPlayers.erase(_streamID);
-        _pAudioEngine->_recurMutex.unlock();
     }
 
 

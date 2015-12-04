@@ -6,6 +6,8 @@ import android.media.AudioManager;
 import android.media.SoundPool;
 import android.os.Build;
 import android.util.Log;
+import android.util.SparseArray;
+import android.util.SparseIntArray;
 
 import java.io.FileDescriptor;
 
@@ -22,6 +24,7 @@ public class SoundPoolCompat {
     private SoundPool mSoundPool = null;
     private AudioPool mAudioPool = null;
     private SoundPoolCompat.OnLoadCompleteListener mOnLoadCompleteListener = null;
+    private SparseArray<Object> mSoundIDForSoundPool;
 
     /**
      * Constructor. Constructs a SoundPool object.
@@ -64,6 +67,7 @@ public class SoundPoolCompat {
         else
         {
             mSoundPool = new SoundPool(maxStreams,streamType,0);
+            mSoundIDForSoundPool = new SparseArray<>(256);
         }
     }
 
@@ -94,7 +98,7 @@ public class SoundPoolCompat {
      * @return a sound ID. This value can be used to play or unload the sound.
      */
     public int load(String path, int priority) {
-        return mUseOpenSLES ? mAudioPool.loadAsync(path) : mSoundPool.load(path,priority);
+        return mUseOpenSLES ? mAudioPool.loadAsync(path) : _registerSoundID(mSoundPool.load(path,priority));
     }
 
     /**
@@ -113,7 +117,7 @@ public class SoundPoolCompat {
      * @return a sound ID. This value can be used to play or unload the sound.
      */
     public int load(Context context, int resId, int priority) {
-        return mUseOpenSLES ? mAudioPool.loadAsync(context, resId) : mSoundPool.load(context,resId,priority);
+        return mUseOpenSLES ? mAudioPool.loadAsync(context, resId) : _registerSoundID(mSoundPool.load(context,resId,priority));
     }
 
     /**
@@ -125,7 +129,7 @@ public class SoundPoolCompat {
      * @return a sound ID. This value can be used to play or unload the sound.
      */
     public int load(AssetFileDescriptor afd, int priority) {
-        return mUseOpenSLES ? mAudioPool.loadAsync(afd) : mSoundPool.load(afd,priority);
+        return mUseOpenSLES ? mAudioPool.loadAsync(afd) :_registerSoundID(mSoundPool.load(afd, priority));
     }
 
     /**
@@ -143,7 +147,23 @@ public class SoundPoolCompat {
      * @return a sound ID. This value can be used to play or unload the sound.
      */
     public int load(FileDescriptor fd, long offset, long length, int priority) {
-        return mUseOpenSLES ? mAudioPool.loadAsync(fd,offset,length) : mSoundPool.load(fd,offset,length,priority);
+        return mUseOpenSLES ? mAudioPool.loadAsync(fd,offset,length) : _registerSoundID(mSoundPool.load(fd,offset,length,priority));
+    }
+
+    private int _registerSoundID(int soundID)
+    {
+        synchronized(mSoundIDForSoundPool) {
+            mSoundIDForSoundPool.append(soundID,null);
+        }
+        return soundID;
+    }
+
+    private boolean _unregisterSoundID(int soundID,boolean returnValue)
+    {
+        synchronized(mSoundIDForSoundPool) {
+            mSoundIDForSoundPool.remove(soundID);
+        }
+        return returnValue;
     }
 
     /**
@@ -157,7 +177,24 @@ public class SoundPoolCompat {
      * @return true if just unloaded, false if previously unloaded
      */
     public boolean unload(int soundID) {
-        return true;
+        return mUseOpenSLES ? mAudioPool.unload(soundID) : _unregisterSoundID(soundID,mSoundPool.unload(soundID));
+    }
+
+
+    public void unloadAll() {
+        if(mUseOpenSLES)
+            mAudioPool.unloadAll();
+        else
+        {
+            synchronized (mSoundIDForSoundPool) {
+                final int size = mSoundIDForSoundPool.size();
+                for (int i = 0; i < size; i++) {
+                    final int soundID = mSoundIDForSoundPool.keyAt(i);
+                    mSoundPool.unload(soundID);
+                }
+                mSoundIDForSoundPool.clear();
+            }
+        }
     }
 
     /**

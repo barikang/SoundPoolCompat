@@ -87,7 +87,7 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
             if(doStop)
             {
-                pAudioPlayer->stop();
+                pAudioEngine->stop(streamID);
             }
 
         }
@@ -112,6 +112,7 @@ AudioEngine::AudioEngine()
 , _outputMixObject(nullptr)
 , _released(false)
 , _thread(nullptr)
+,_currentAudioPlayerCount(0)
 {
 
 }
@@ -208,26 +209,21 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
             LOGD("Skip play. exceed max audioplayer count. AudioID : %d",audioID);
             break;
         }
+        streamID = _currentAudioStreamID.fetch_add(1);
 
-        const int newStreamID = _currentAudioStreamID.fetch_add(1);
         std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
+        auto initPlayer = pPlayer->init(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
+        if (!initPlayer){
+            LOGE( "%s,%d message:create player fail", __func__, __LINE__);
+            streamID = -1;
+            break;
+        }
         _recurMutex.lock();
-        _audioPlayers[newStreamID] = pPlayer;
+        _audioPlayers[streamID] = pPlayer;
         _recurMutex.unlock();
-
-        streamID = newStreamID;
 
         if(repeatCount == 0)
             repeatCount = 1;
-
-        auto initPlayer = pPlayer->init(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
-        if (!initPlayer){
-            _recurMutex.lock();
-            _audioPlayers.erase(newStreamID);
-            _recurMutex.unlock();
-            LOGE( "%s,%d message:create player fail", __func__, __LINE__);
-            break;
-        }
 
         pPlayer->setVolume(volume);
         pPlayer->setPlayRate(playRate);
@@ -307,6 +303,7 @@ void AudioEngine::stop(int streamID)
     auto pPlayer = getAudioPlayer(streamID);
     if(pPlayer) {
         pPlayer->stop();
+        _audioPlayers.erase(streamID);
     }
 }
 float AudioEngine::getCurrentTime(int streamID)
@@ -324,17 +321,18 @@ float AudioEngine::getCurrentTime(int streamID)
 void AudioEngine::stopAll(int streamGroupID,bool wait)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
-    std::vector<int> removeStreamIDS;
-    double maxRemoveTime = 0;
-    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
+    //double maxRemoveTime = 0;
+    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); ) {
         auto pPlayer = iter->second;
         if (streamGroupID == 0 || pPlayer->_streamGroupID == streamGroupID) {
-            removeStreamIDS.push_back(iter->first);
+            //removeStreamIDS.push_back(iter->first);
             pPlayer->stop();
-            maxRemoveTime = std::max(maxRemoveTime, pPlayer->_stoppedTime + DELAY_TIME_TO_REMOVE);
+            iter = _audioPlayers.erase(iter);
+            continue;
         }
+        iter++;
     }
-
+    /*
     if(wait) {
         double remainTime = maxRemoveTime - AudioEngine::getCurrentTime();
         if(remainTime > 0)
@@ -342,10 +340,8 @@ void AudioEngine::stopAll(int streamGroupID,bool wait)
             std::this_thread::sleep_for(std::chrono::milliseconds((int)(remainTime*1000)));
         }
     }
+     */
 
-    for(auto iter = removeStreamIDS.begin() ; iter != removeStreamIDS.end(); iter++) {
-        _audioPlayers.erase(*iter);
-    }
 }
 
 void AudioEngine::pauseAll(int streamGroupID) {
