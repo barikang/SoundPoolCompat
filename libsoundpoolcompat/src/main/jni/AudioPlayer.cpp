@@ -8,7 +8,7 @@
 using namespace SoundPoolCompat;
 
 
-void bqAudioPlayer_Callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context)
+void AudioPlayer::callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context)
 {
     if (context) {
         AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
@@ -18,7 +18,7 @@ void bqAudioPlayer_Callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, 
     }
 }
 
-void bqAudioPlayer_Callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 playEvent)
+void AudioPlayer::callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 playEvent)
 {
     if (context)
     {
@@ -32,7 +32,7 @@ void bqAudioPlayer_Callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32
     }
 }
 
-void bqAudioPlayer_Callback_PrefetchStatus(SLPrefetchStatusItf caller,void *context,SLuint32 event)
+void AudioPlayer::callback_PrefetchStatus(SLPrefetchStatusItf caller,void *context,SLuint32 event)
 {
     if(context)
     {
@@ -55,7 +55,7 @@ void bqAudioPlayer_Callback_PrefetchStatus(SLPrefetchStatusItf caller,void *cont
 }
 
 
-AudioPlayer::AudioPlayer()
+AudioPlayer::AudioPlayer(AudioEngine *pAudioEngine)
         : _fdPlayerObject(nullptr)
         , _playOver(false)
         , _repeatCount(0)
@@ -63,6 +63,7 @@ AudioPlayer::AudioPlayer()
         , _stoppedTime(0.0f)
         , _currentBufIndex(0)
         , _dupFD(0)
+        , _pAudioEngine(pAudioEngine)
 {
 
 
@@ -70,7 +71,6 @@ AudioPlayer::AudioPlayer()
 
 AudioPlayer::~AudioPlayer()
 {
-
 
     if (_fdPlayerObject)
     {
@@ -82,8 +82,9 @@ AudioPlayer::~AudioPlayer()
         _fdPlayerPrefetchStatus = nullptr;
         _fdPlayerConfig = nullptr;
         _fdPlayerPlayRate = nullptr;
-
     }
+
+    _pAudioEngine->decAudioPlayerCount();
 
     if(_dupFD > 0)
     {
@@ -96,7 +97,7 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
                        std::shared_ptr<AudioSource> pAudioSrc,
                        SLint32 androidStreamType,int streamGroupID)
 {
-    LOGD("[%d] Player Init : ",streamID);
+    //LOGD("[%d] Player Init : ",streamID);
     bool ret = false;
     _streamID = streamID;
     _streamGroupID = streamGroupID;
@@ -202,7 +203,7 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
         if (SL_RESULT_SUCCESS != result) { LOGE("get the play interface fail"); break; }
 
         (*_fdPlayerPlay)->SetCallbackEventsMask(_fdPlayerPlay, SL_PLAYEVENT_HEADATEND);
-        result = (*_fdPlayerPlay)->RegisterCallback(_fdPlayerPlay, bqAudioPlayer_Callback_PlayerPlay,
+        result = (*_fdPlayerPlay)->RegisterCallback(_fdPlayerPlay, AudioPlayer::callback_PlayerPlay,
                                                     this);
         if (SL_RESULT_SUCCESS != result) { LOGE("register play callback fail");break; }
 
@@ -215,7 +216,7 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
             if (SL_RESULT_SUCCESS != result) {LOGE("get the bufferqueue interface fail");break; };
 
             // register callback on the buffer queue
-            result = (*_fdPlayerBufferQueue)->RegisterCallback(_fdPlayerBufferQueue, bqAudioPlayer_Callback_SimpleBufferQueue,this);
+            result = (*_fdPlayerBufferQueue)->RegisterCallback(_fdPlayerBufferQueue, AudioPlayer::callback_SimpleBufferQueue,this);
             if(SL_RESULT_SUCCESS != result){ LOGE("register buffer queue callback fail"); break; }
 
         }
@@ -228,7 +229,7 @@ bool AudioPlayer::init(int streamID,SLEngineItf engineEngine, SLObjectItf output
             if (SL_RESULT_SUCCESS != result) {LOGE("set prefetch callback event mask fail");break; };
             result = (*_fdPlayerPrefetchStatus)->SetFillUpdatePeriod(_fdPlayerPrefetchStatus,50);
             if (SL_RESULT_SUCCESS != result) {LOGE("set fillupdateperiod fail");break; };
-            result = (*_fdPlayerPrefetchStatus)->RegisterCallback(_fdPlayerPrefetchStatus,bqAudioPlayer_Callback_PrefetchStatus , this );
+            result = (*_fdPlayerPrefetchStatus)->RegisterCallback(_fdPlayerPrefetchStatus,AudioPlayer::callback_PrefetchStatus , this );
             if (SL_RESULT_SUCCESS != result) {LOGE("register prefetch callback fail");break; };
 
         }
@@ -382,6 +383,10 @@ void AudioPlayer::stop()
     if(_playOver == false) {
         _stoppedTime = AudioEngine::getCurrentTime();
         _playOver = true;
+
+        _pAudioEngine->_recurMutex.lock();
+        _pAudioEngine->_audioPlayers.erase(_streamID);
+        _pAudioEngine->_recurMutex.unlock();
     }
 
 

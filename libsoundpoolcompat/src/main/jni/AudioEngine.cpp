@@ -5,7 +5,7 @@
 #include <inttypes.h>
 
 #define DELAY_TIME_TO_REMOVE    (0.5f)
-#define MAX_AUDIOPLAYER_COUNT   (32)
+#define MAX_AUDIOPLAYER_COUNT   (28)
 
 //
 // Created by barikang on 2015. 11. 24..
@@ -200,19 +200,17 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         if (_engineEngine == nullptr)
             break;
 
-        // This limitation is just for speed. not exact.
-        if(MAX_AUDIOPLAYER_COUNT <= releaseUnusedAudioPlayer())
-        {
-            LOGD("Skip play. exceed max audioplayer count. AudioID : %d",audioID);
-            break;
-        }
-
         auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
         if(pAudioSrc == nullptr)
             break;
 
+        if(!incAudioPlayerCount()) {
+            LOGD("Skip play. exceed max audioplayer count. AudioID : %d",audioID);
+            break;
+        }
+
         const int newStreamID = _currentAudioStreamID.fetch_add(1);
-        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer());
+        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
         _recurMutex.lock();
         _audioPlayers[newStreamID] = pPlayer;
         _recurMutex.unlock();
@@ -242,6 +240,28 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
     return streamID;
 
 }
+
+bool AudioEngine::incAudioPlayerCount()
+{
+    bool overMax = false;
+    for(;;) {
+        int cnt = _currentAudioPlayerCount.load();
+        if(cnt >= MAX_AUDIOPLAYER_COUNT) {
+            overMax = true;
+            break;
+        }
+        if(_currentAudioPlayerCount.compare_exchange_weak(cnt,cnt+1))
+            break;
+    }
+
+    return !overMax;
+}
+void AudioEngine::decAudioPlayerCount()
+{
+    _currentAudioPlayerCount.fetch_sub(1);
+
+}
+
 
 int AudioEngine::releaseUnusedAudioPlayer()
 {

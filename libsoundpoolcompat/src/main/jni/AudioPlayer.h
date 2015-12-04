@@ -13,8 +13,13 @@ namespace SoundPoolCompat {
     class AudioEngine;
 
     class AudioPlayer {
+    private:
+        static void callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context);
+        static void callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 playEvent);
+        static void callback_PrefetchStatus(SLPrefetchStatusItf caller,void *context,SLuint32 event);
+
     public:
-        AudioPlayer();
+        AudioPlayer(AudioEngine *pAudioEngine);
         ~AudioPlayer();
 
         bool init(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
@@ -50,9 +55,8 @@ namespace SoundPoolCompat {
 
         std::shared_ptr<AudioSource> _audioSrc;
         int _dupFD;
-
-
-        volatile int _currentBufIndex;
+        AudioEngine *_pAudioEngine;
+        int _currentBufIndex;
 
         friend class AudioEngine;
     };

@@ -50,6 +50,8 @@ namespace SoundPoolCompat {
 
         bool init();
         static void threadFunc(AudioEngine* audioEngine);
+        bool incAudioPlayerCount();
+        void decAudioPlayerCount();
 
 
         // engine interfaces
@@ -63,6 +65,7 @@ namespace SoundPoolCompat {
         std::unordered_map<int, std::shared_ptr<AudioPlayer> >  _audioPlayers;
 
         std::atomic<int> _currentAudioStreamID;
+        std::atomic<int> _currentAudioPlayerCount;
         std::recursive_mutex _recurMutex;
 
         std::mutex _queueMutex;
@@ -71,6 +74,7 @@ namespace SoundPoolCompat {
         std::thread* _thread;
         volatile bool _released;
 
+        friend class AudioPlayer;
     };
 
 }
