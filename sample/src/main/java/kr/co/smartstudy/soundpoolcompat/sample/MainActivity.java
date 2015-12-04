@@ -15,7 +15,7 @@ public class MainActivity extends AppCompatActivity {
     private final static String TAG = "SoundPoolCompatTest";
 
     int[] mSoundIDs = new int[10];
-    SoundPoolCompat mSoundPool = new SoundPoolCompat(4, AudioManager.STREAM_MUSIC,false,true);
+    SoundPoolCompat mSoundPool = new SoundPoolCompat(4, AudioManager.STREAM_MUSIC,true,true);
     final Random mRand = new Random();
 
     @Override

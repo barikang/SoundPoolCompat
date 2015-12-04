@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
+#include <SLES/OpenSLES_AndroidMetadata.h>
 #include <SLES/OpenSLES_AndroidConfiguration.h>
 #include <string>
 #include <unordered_map>
