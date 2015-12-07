@@ -4,8 +4,10 @@
 #include "utils.h"
 #include <inttypes.h>
 
+
 #define DELAY_TIME_TO_REMOVE    (0.5f)
 #define MAX_AUDIOPLAYER_COUNT   (28)
+#define  CLASS_NAME "kr/co/smartstudy/soundpoolcompat/AudioEngine"
 
 //
 // Created by barikang on 2015. 11. 24..
@@ -75,19 +77,20 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
         {
             pAudioPlayer->_repeatCount--;
             bool doStop = true;
-            if(pAudioPlayer->_repeatCount != 0)
-            {
-                do {
-                    if(!pAudioPlayer->play())
-                        break;
-                    doStop = false;
+            if(pAudioPlayer->_isForDecoding == false) {
+                if (pAudioPlayer->_repeatCount != 0) {
+                    do {
+                        if (!pAudioPlayer->play())
+                            break;
+                        doStop = false;
 
-                } while(0);
+                    } while (0);
+                }
             }
 
             if(doStop)
             {
-                pAudioEngine->stop(streamID);
+                pAudioEngine->onPlayComplete(streamID);
             }
 
         }
@@ -212,7 +215,7 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         streamID = _currentAudioStreamID.fetch_add(1);
 
         std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
-        auto initPlayer = pPlayer->init(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
+        auto initPlayer = pPlayer->initForPlay(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
         if (!initPlayer){
             LOGE( "%s,%d message:create player fail", __func__, __LINE__);
             streamID = -1;
@@ -228,6 +231,46 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         pPlayer->setVolume(volume);
         pPlayer->setPlayRate(playRate);
         pPlayer->setRepeatCount(repeatCount);
+        pPlayer->play();
+
+
+    } while (0);
+
+    return streamID;
+
+}
+
+int AudioEngine::decodeAudio(int audioID,int streamGroupID)
+{
+    int streamID = -1;
+
+    do
+    {
+        if (_engineEngine == nullptr)
+            break;
+
+        auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
+        if(pAudioSrc == nullptr)
+            break;
+
+        while(!incAudioPlayerCount()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        streamID = _currentAudioStreamID.fetch_add(1);
+
+        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
+        auto initPlayer = pPlayer->initForDecoding(streamID,_engineEngine,pAudioSrc,streamGroupID);
+        if (!initPlayer){
+            LOGE( "%s,%d message:create player fail", __func__, __LINE__);
+            streamID = -1;
+            break;
+        }
+        _recurMutex.lock();
+        _audioPlayers[streamID] = pPlayer;
+        _recurMutex.unlock();
+
+        pPlayer->enqueueBuffer();
+        pPlayer->enqueueBuffer();
         pPlayer->play();
 
 
@@ -393,6 +436,103 @@ void AudioEngine::setRepeatCount(int streamID,int repeatCount)
 
 }
 
+////////////////////////////////////////////////////
+
+typedef struct JniMethodInfo_
+{
+    jclass      classID;
+    jmethodID   methodID;
+} JniMethodInfo;
+
+extern "C"
+{
+static JavaVM *gJavaVM = nullptr;
+static JniMethodInfo callbackMethodInfo;
+
+jint JNI_OnLoad(JavaVM *vm, void *reserved)
+{
+    gJavaVM = vm;
+    JNIEnv* env;
+    if (vm->GetEnv((void **)&env, JNI_VERSION_1_4) != JNI_OK) {
+        LOGD("GETENVFAILEDONLOAD");
+        return -1;
+    }
+
+    jclass clazz = env->FindClass(CLASS_NAME);
+    callbackMethodInfo.methodID = env->GetStaticMethodID(clazz,"onDecodingComplete", "(III)V");
+    callbackMethodInfo.classID = (jclass) env->NewGlobalRef(clazz);
+
+    return JNI_VERSION_1_4;
+}
+
+
+// get env and cache it
+static JNIEnv *getJNIEnv(void) {
+    JavaVM *jvm = gJavaVM;
+    if (NULL == jvm) {
+        return NULL;
+    }
+
+    JNIEnv *env = NULL;
+    // get jni environment
+    jint ret = jvm->GetEnv((void **) &env, JNI_VERSION_1_4);
+
+    switch (ret) {
+        case JNI_OK :
+            // Success!
+            return env;
+
+        case JNI_EDETACHED :
+            // Thread not attached
+
+            // TODO : If calling AttachCurrentThread() on a native thread
+            // must call DetachCurrentThread() in future.
+            // see: http://developer.android.com/guide/practices/design/jni.html
+
+            LOGD("attachCurrentThread");
+            ///*
+            if (jvm->AttachCurrentThread(&env, NULL) < 0) {
+                LOGD("Failed to get the environment using AttachCurrentThread()");
+                return NULL;
+            } else {
+                // Success : Attached and obtained JNIEnv!
+                return env;
+            }
+            // */
+
+        case JNI_EVERSION :
+            // Cannot recover from this error
+            LOGD("JNI interface version 1.4 not supported");
+        default :
+            LOGD("Failed to get the environment using GetEnv()");
+            return NULL;
+    }
+}
+
+}
+
+void AudioEngine::onPlayComplete(int streamID)
+{
+
+    auto pPlayer = getAudioPlayer(streamID);
+    if(pPlayer) {
+        std::lock_guard<std::recursive_mutex> guard(_recurMutex);
+        pPlayer->stop();
+        _audioPlayers.erase(streamID);
+    }
+
+    if(pPlayer && pPlayer->_isForDecoding) {
+        pPlayer->_audioSrc->_type = AudioSource::AudioSourceType::PCM;
+
+        JNIEnv *env = getJNIEnv();
+        env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID, pPlayer->_streamGroupID,pPlayer->_streamID,0);
+        JavaVM *jvm = gJavaVM;
+        jvm->DetachCurrentThread();
+
+    }
+
+}
+
 
 
 JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeInitilizeAudioEngine
@@ -421,6 +561,22 @@ JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeP
     return ret;
 
 }
+
+
+JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeDecodeAudio
+        (JNIEnv *env, jclass clasz, jint audioID, jint streamGroupID)
+{
+    jint ret = -1;
+    auto pEngine = AudioEngine::getInstance();
+    if(pEngine)
+    {
+        ret = pEngine->decodeAudio(audioID,streamGroupID);
+    }
+
+    return ret;
+}
+
+
 
 JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePause
         (JNIEnv *env, jclass clasz, jint streamID)

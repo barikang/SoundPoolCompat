@@ -15,6 +15,7 @@ namespace SoundPoolCompat {
         int size;
 
     public:
+        PCMBuffer(int size);
         PCMBuffer(void *ptr,int offset,int size);
         ~PCMBuffer();
     };
@@ -34,6 +35,7 @@ namespace SoundPoolCompat {
     public:
         ~AudioSource();
         std::shared_ptr<PCMBuffer> getPCMBuffer(size_t idx);
+        std::shared_ptr<PCMBuffer> addEmptyPCMBuffer(int size);
 
         AudioSourceType _type;
 
@@ -57,9 +59,6 @@ namespace SoundPoolCompat {
         static int createAudioSource();
         static void releaseAudioSource(int audioID);
         static std::shared_ptr<AudioSource> getSharedPtrAudioSource(int audioID);
-
-        static bool setAudioSourcePCM(int audioID,int numChannels,int samplingRate,int bitPerSample);
-        static bool addPCMBuffer(int audioID,void* pBuf,int offset,int size);
 
         static bool setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset,int64_t length);
         static bool setAudioSourceURI(int audioID,const std::string& uri);

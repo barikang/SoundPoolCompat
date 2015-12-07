@@ -45,6 +45,14 @@ JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeP
 
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
+ * Method:    nativeDecodeAudio
+ * Signature: (II)I
+ */
+JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeDecodeAudio
+  (JNIEnv *, jclass, jint, jint);
+
+/*
+ * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
  * Method:    nativePause
  * Signature: (I)V
  */

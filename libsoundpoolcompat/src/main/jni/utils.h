@@ -1,6 +1,9 @@
 //
 // Created by barikang on 2015. 11. 26..
 //
+#ifndef SOUNDPOOLCOMPAT_UTILS_H
+#define SOUNDPOOLCOMPAT_UTILS_H
+
 #include <android/log.h>
 #include <atomic>
 #include <condition_variable>
@@ -16,8 +19,6 @@
 #include <cstdlib>
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
-#include <SLES/OpenSLES_AndroidMetadata.h>
-#include <SLES/OpenSLES_AndroidConfiguration.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,8 +28,7 @@
 #include <chrono>
 #include <deque>
 
-#ifndef SOUNDPOOLCOMPAT_UTILS_H
-#define SOUNDPOOLCOMPAT_UTILS_H
+
 
 #define SOUNDPOOLCOMPAT_TAG "SoundPoolCompat"
 #define LOGD(...)  __android_log_print(ANDROID_LOG_DEBUG,SOUNDPOOLCOMPAT_TAG,__VA_ARGS__)

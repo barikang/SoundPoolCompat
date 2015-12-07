@@ -33,6 +33,7 @@ namespace SoundPoolCompat {
 
     public:
         int playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate);
+        int decodeAudio(int audioID,int streamGroupID);
         void pause(int streamID);
         void pauseAll(int streamGroupID);
         void resume(int streamID);
@@ -47,6 +48,8 @@ namespace SoundPoolCompat {
     private:
         std::shared_ptr<AudioPlayer>  getAudioPlayer(int streamID);
         int releaseUnusedAudioPlayer();
+
+        void onPlayComplete(int streamID);
 
         bool init();
         static void threadFunc(AudioEngine* audioEngine);

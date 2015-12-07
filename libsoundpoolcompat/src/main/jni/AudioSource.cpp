@@ -7,6 +7,13 @@
 
 using namespace SoundPoolCompat;
 
+PCMBuffer::PCMBuffer(int _size)
+{
+    this->ptr = malloc(_size);
+    this->size = _size;
+    memset(this->ptr,0,_size);
+}
+
 PCMBuffer::PCMBuffer(void *_ptr,int _offset,int _size)
 {
     this->ptr = malloc(_size);
@@ -35,6 +42,14 @@ std::shared_ptr<PCMBuffer> AudioSource::getPCMBuffer(size_t idx)
 
 }
 
+std::shared_ptr<PCMBuffer> AudioSource::addEmptyPCMBuffer(int size)
+{
+    std::shared_ptr<PCMBuffer> ret(new PCMBuffer(size));
+    _pcm_nativeBuffers.push_back(ret);
+    return ret;
+}
+
+
 // statics...
 
 int AudioSource::createAudioSource()
@@ -62,36 +77,6 @@ std::shared_ptr<AudioSource> AudioSource::getSharedPtrAudioSource(int audioID)
     return nullptr;
 }
 
-bool AudioSource::setAudioSourcePCM(int audioID,int numChannels,int samplingRate,int bitPerSample)
-{
-    auto audioSrc = AudioSource::getSharedPtrAudioSource(audioID);
-    if(audioSrc != nullptr && audioSrc->_type == AudioSourceType::NotDefined)
-    {
-        audioSrc->_type = AudioSourceType::PCM;
-        audioSrc->_pcm_numChannels = numChannels;
-        audioSrc->_pcm_samplingRate = samplingRate;
-        audioSrc->_pcm_bitPerSample = bitPerSample;
-        return true;
-    }
-    return false;
-}
-
-bool AudioSource::addPCMBuffer(int audioID,void* pBuf,int offset,int size) {
-    if (pBuf == nullptr || size <= 0) {
-        LOGD("addPCMBuffer error : null pointer or size is 0");
-        return false;
-    }
-
-    auto audioSrc = getSharedPtrAudioSource(audioID);
-    if(audioSrc != nullptr)
-    {
-        std::shared_ptr<PCMBuffer> pcmBuf(new PCMBuffer(pBuf,offset,size));
-        audioSrc->_pcm_nativeBuffers.push_back(pcmBuf);
-        return true;
-    }
-    return false;
-
-}
 
 bool AudioSource::setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset,int64_t length)
 {
@@ -172,44 +157,6 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeR
     AudioSource::releaseAudioSource(audioID);
 }
 
-/*
- * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
- * Method:    nativeSetAudioSourcePCM
- * Signature: (IIII)Z
- */
-JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeSetAudioSourcePCM
-        (JNIEnv *env, jclass clasz, jint audioID, jint numChannels, jint samplingRate, jint bitPerSample)
-{
-    return AudioSource::setAudioSourcePCM(audioID,numChannels,samplingRate,bitPerSample);
-}
-
-/*
- * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
- * Method:    nativeAddPCMBuffer_DirectByteBuffer
- * Signature: (ILjava/nio/ByteBuffer;II)Z
- */
-JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeAddPCMBuffer_1DirectByteBuffer
-        (JNIEnv *env, jclass clasz, jint audioID, jobject byteBuffer, jint offset, jint length)
-{
-    jbyte *dBuf = (jbyte*)env->GetDirectBufferAddress(byteBuffer);
-    return AudioSource::addPCMBuffer(audioID,dBuf,offset,length);
-}
-
-/*
- * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
- * Method:    nativeAddPCMBuffer_ByteArray
- * Signature: (I[BII)Z
- */
-JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeAddPCMBuffer_1ByteArray
-        (JNIEnv *env, jclass clasz, jint audioID, jbyteArray byteArray, jint offset, jint length)
-{
-    jbyte* pBuf = (jbyte*) env->GetPrimitiveArrayCritical(byteArray, 0);
-
-    jboolean ret = AudioSource::addPCMBuffer(audioID,pBuf,offset,length);
-
-    env->ReleasePrimitiveArrayCritical(byteArray, pBuf, 0);
-    return ret;
-}
 
 // function contents
 static int jniGetFDFromFileDescriptor(JNIEnv * env, jobject fileDescriptor) {

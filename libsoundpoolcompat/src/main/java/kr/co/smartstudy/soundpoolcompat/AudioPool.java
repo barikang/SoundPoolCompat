@@ -24,23 +24,26 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jaehun on 2015. 12. 2..
  */
 public class AudioPool {
     private final static String TAG = "AudioPool";
-    private static final int SAMPLE_LOADED = 1;
+    static final int SAMPLE_LOADED = 1;
     private final static boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
 
+    private boolean mReleased;
     private EventHandler mEventHandler;
     private AudioPool.OnLoadCompleteListener mOnLoadCompleteListener;
     final private Object mLock;
-    final private AudioEngine mAudioEngine;
     final private ThreadPoolExecutor mThreadPool;
     final private SparseArray<AudioSource> mAudioSources = new SparseArray<>();
     private final int mAudioStreamType;
     private boolean mTryPreDecode = true;
+    final private static AtomicInteger gStreamGroupID = new AtomicInteger(1);
+    final int mStreamGroupID;
 
     public AudioPool(int streamType) {
         this(streamType,true);
@@ -48,16 +51,30 @@ public class AudioPool {
 
     public AudioPool(int streamType,boolean tryPreDecode) {
         mLock = new Object();
-        mAudioEngine = new AudioEngine();
         mAudioStreamType = streamType;
         mTryPreDecode = tryPreDecode;
         mThreadPool = new ThreadPoolExecutor(4,4,1, TimeUnit.SECONDS,new LinkedBlockingQueue<Runnable>());
+
+        AudioEngine.nativeInitilizeAudioEngine();
+        mReleased = false;
+        mStreamGroupID = gStreamGroupID.getAndIncrement();
+        AudioEngine.registerAudioPool(mStreamGroupID, this);
+
     }
 
+    synchronized
     public void release() {
-        mAudioEngine.release();
+        if(mReleased == false)
+        {
+            mReleased = true;
+            AudioEngine.nativeReleaseAudioEngine();
+        }
     }
 
+    @Override
+    protected void finalize() throws Throwable {
+        release();
+    }
 
 
     public final int loadAsync(String path) {
@@ -101,24 +118,17 @@ public class AudioPool {
             return 0;
         }
     }
-    AudioSource.OnCreateAudioSourceComplete mOnCreateAudioSourceCompleteListener = new AudioSource.OnCreateAudioSourceComplete() {
-        @Override
-        public void onCreateAudioSourceComplete(AudioSource audioSrc, boolean success) {
-            EventHandler handler = mEventHandler;
-            if (handler != null) {
-                Message m = handler.obtainMessage(SAMPLE_LOADED, audioSrc.getAudioID(), success ? 0 : -1, null);
-                handler.sendMessage(m);
-            }
-
-        }
-    };
 
     public final int loadAsync(FileDescriptor fd, long offset, long length) {
+        if(mReleased)
+            return -1;
+
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN && mTryPreDecode) {
-            AudioSource audioSrc = AudioSource.createPCMFromFDAsync(fd, offset, length, mThreadPool, mOnCreateAudioSourceCompleteListener);
+            AudioSource audioSrc = AudioSource.createFromFD(fd, offset, length);
             synchronized (mAudioSources) {
                 mAudioSources.append(audioSrc.getAudioID(), audioSrc);
             }
+            AudioEngine.nativeDecodeAudio(audioSrc.getAudioID(),mStreamGroupID);
             return audioSrc.getAudioID();
         }
         else
@@ -127,7 +137,8 @@ public class AudioPool {
             synchronized (mAudioSources) {
                 mAudioSources.append(audioSrc.getAudioID(), audioSrc);
             }
-            mOnCreateAudioSourceCompleteListener.onCreateAudioSourceComplete(audioSrc,!audioSrc.isReleased());
+
+            postEvent(SAMPLE_LOADED,audioSrc.getAudioID(),0,null);
             return audioSrc.getAudioID();
         }
     }
@@ -165,53 +176,81 @@ public class AudioPool {
 
     public final int play(int soundID, float leftVolume, float rightVolume,
                           int priority, int loop, float rate) {
+        if(mReleased)
+            return -1;
+
         AudioSource audioSrc = null;
         synchronized (mAudioSources) {
             audioSrc = mAudioSources.get(soundID);
         }
         if(audioSrc != null)
         {
-            return mAudioEngine.playAudio(audioSrc,loop,(leftVolume+rightVolume)/2,mAudioStreamType ,rate);
+            return AudioEngine.nativePlayAudio(audioSrc.getAudioID(), loop, (leftVolume + rightVolume) / 2, mAudioStreamType, mStreamGroupID, rate);
         }
         return -1;
     }
 
     public final void pause(int streamID)
     {
-        mAudioEngine.pause(streamID);
+        if(mReleased)
+            return;
+
+        AudioEngine.nativePause(streamID);
     }
 
     public final void resume(int streamID)
     {
-        mAudioEngine.resume(streamID);
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeResume(streamID);
     }
 
     public final void autoPause()
     {
-        mAudioEngine.pauseAll();
+        if(mReleased)
+            return;
+
+        AudioEngine.nativePauseAll(mStreamGroupID);
     }
 
     public final void autoResume()
     {
-        mAudioEngine.resumeAll();
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeResumeAll(mStreamGroupID);
     }
 
     public void stop(int streamID)
     {
-        mAudioEngine.stop(streamID);
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeStop(streamID);
     }
 
     public void stopAll()
     {
-        mAudioEngine.stopAll();
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeStopAll(mStreamGroupID);
     }
 
     public final void setVolume(int streamID, float leftVolume, float rightVolume)
     {
+        if(mReleased)
+            return;
+
         setVolume(streamID,(leftVolume+rightVolume)/2);
     }
-    public void setVolume(int streamID, float volume) {
-        mAudioEngine.setVolume(streamID,volume);
+    public void setVolume(int streamID, float volume)
+    {
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeSetVolume(streamID, volume);
 
     }
     public void setPriority(int streamID, int priority)
@@ -221,12 +260,17 @@ public class AudioPool {
 
     public void setLoop(int streamID, int loop)
     {
-        mAudioEngine.setRepeatCount(streamID,loop);
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeSetRepeatCount(streamID, loop);
     }
 
-    public void setRate(int streamID, float rate)
-    {
-        mAudioEngine.setPlayRate(streamID,rate);
+    public void setRate(int streamID, float rate) {
+        if(mReleased)
+            return;
+
+        AudioEngine.nativeSetPlayRate(streamID, rate);
     }
 
     public interface OnLoadCompleteListener {
@@ -263,14 +307,10 @@ public class AudioPool {
     }
 
 
-    private static void postEvent(WeakReference<AudioPool> ref, int msg, int arg1, int arg2, Object obj) {
-        AudioPool audioPool = ref.get();
-        if (audioPool == null)
-            return;
-
-        if (audioPool.mEventHandler != null) {
-            Message m = audioPool.mEventHandler.obtainMessage(msg, arg1, arg2, obj);
-            audioPool.mEventHandler.sendMessage(m);
+    void postEvent(int msg, int arg1, int arg2, Object obj) {
+        if (mEventHandler != null) {
+            Message m = mEventHandler.obtainMessage(msg, arg1, arg2, obj);
+            mEventHandler.sendMessage(m);
         }
     }
 

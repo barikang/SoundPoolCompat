@@ -1,7 +1,11 @@
 package kr.co.smartstudy.soundpoolcompat;
 
 import android.media.AudioManager;
+import android.util.SparseArray;
 
+import java.lang.ref.WeakReference;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -11,13 +15,12 @@ public class AudioEngine {
     final static String TAG = "AudioEngine";
     static {
         System.loadLibrary("SoundPoolCompat");
-
     }
-
 
     static native void nativeInitilizeAudioEngine();
     static native void nativeReleaseAudioEngine();
     static native int nativePlayAudio(int audioID,int repeatcount ,float volume,int androidStreamType,int streamGroupID,float playRate);
+    static native int nativeDecodeAudio(int audioID,int streamGroupID);
     static native void nativePause(int streamID);
     static native void nativeStop(int streamID);
     static native void nativeResume(int streamID);
@@ -28,6 +31,7 @@ public class AudioEngine {
     static native void nativeSetPlayRate(int streamID,float playRate);
     static native void nativeSetRepeatCount(int streamID,int repeatCount);
 
+
     //////////////////////////////////////////////////////////////
     public static final int ANDROID_STREAM_VOICE = AudioManager.STREAM_VOICE_CALL;
     public static final int ANDROID_STREAM_SYSTEM = AudioManager.STREAM_SYSTEM;
@@ -36,103 +40,27 @@ public class AudioEngine {
     public static final int ANDROID_STREAM_ALARM = AudioManager.STREAM_ALARM;
     public static final int ANDROID_STREAM_NOTIFICATION = AudioManager.STREAM_NOTIFICATION;
 
-    ///////////////////////////////////////////////////////////////
-    private boolean mReleased;
-    static AtomicInteger gStreamGroupID = new AtomicInteger(1);
-    final int mStreamGroupID;
 
-    public AudioEngine() {
-        nativeInitilizeAudioEngine();
-        mReleased = false;
-        mStreamGroupID = gStreamGroupID.getAndIncrement();
-    }
+    final private static SparseArray<WeakReference<AudioPool>> gStreamGroupID2AudioPool = new SparseArray<>();
+    final private static WeakReference<AudioPool> gNullAudioPool = new WeakReference<AudioPool>(null);
 
-    public void release() {
-        if(mReleased == false)
-        {
-            mReleased = true;
-            nativeReleaseAudioEngine();
+    static void registerAudioPool(int streamGroupID,AudioPool audioPool)
+    {
+        synchronized (gStreamGroupID2AudioPool) {
+            gStreamGroupID2AudioPool.put(streamGroupID,new WeakReference<AudioPool>(audioPool));
         }
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        release();
-        super.finalize();
-    }
-
-    public int playAudio(AudioSource audioSrc,int repeatcount ,float volume,int androidStreamType,float playRate)
+    static void onDecodingComplete(int streamGroupID,int audioID,int result)
     {
+        AudioPool audioPool = null;
+        synchronized (gStreamGroupID2AudioPool)
+        {
+            audioPool = gStreamGroupID2AudioPool.get(streamGroupID, gNullAudioPool).get();
+        }
+        if(audioPool != null)
+            audioPool.postEvent(AudioPool.SAMPLE_LOADED,audioID,result,null);
 
-        if(mReleased)
-            return -1;
-        return nativePlayAudio(audioSrc.getAudioID(),repeatcount,volume,androidStreamType,mStreamGroupID,playRate);
-    }
-
-    public void pause(int streamID)
-    {
-        if(mReleased)
-            return;
-        nativePause(streamID);
-    }
-
-    public void stop(int streamID)
-    {
-        if(mReleased)
-            return;
-        nativeStop(streamID);
-    }
-
-    public void resume(int streamID)
-    {
-        if(mReleased)
-            return;
-        nativeResume(streamID);
-    }
-
-    public void pauseAll() {
-        if(mReleased)
-            return;
-
-        nativePauseAll(mStreamGroupID);
-
-    }
-
-    public void resumeAll() {
-        if(mReleased)
-            return;
-        nativeResumeAll(mStreamGroupID);
-    }
-
-    public void stopAll() {
-        if(mReleased)
-            return;
-
-        nativeStopAll(mStreamGroupID);
-    }
-
-    public void setVolume(int streamID,float volume)
-    {
-        if(mReleased)
-            return;
-
-        nativeSetVolume(streamID,volume);
-    }
-
-    public void setPlayRate(int streamID,float playRate)
-    {
-        if(mReleased)
-            return;
-
-        nativeSetPlayRate(mStreamGroupID,playRate);
-    }
-
-    public void setRepeatCount(int streamID,int repeatCount)
-    {
-        if(mReleased)
-            return;
-
-        nativeSetRepeatCount(mStreamGroupID,repeatCount);
     }
 
 }

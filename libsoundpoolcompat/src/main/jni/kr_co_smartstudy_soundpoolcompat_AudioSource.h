@@ -27,30 +27,6 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeR
 
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
- * Method:    nativeSetAudioSourcePCM
- * Signature: (IIII)Z
- */
-JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeSetAudioSourcePCM
-  (JNIEnv *, jclass, jint, jint, jint, jint);
-
-/*
- * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
- * Method:    nativeAddPCMBuffer_DirectByteBuffer
- * Signature: (ILjava/nio/ByteBuffer;II)Z
- */
-JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeAddPCMBuffer_1DirectByteBuffer
-  (JNIEnv *, jclass, jint, jobject, jint, jint);
-
-/*
- * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
- * Method:    nativeAddPCMBuffer_ByteArray
- * Signature: (I[BII)Z
- */
-JNIEXPORT jboolean JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioSource_nativeAddPCMBuffer_1ByteArray
-  (JNIEnv *, jclass, jint, jbyteArray, jint, jint);
-
-/*
- * Class:     kr_co_smartstudy_soundpoolcompat_AudioSource
  * Method:    nativeSetAudioSourceFileDescriptor
  * Signature: (ILjava/io/FileDescriptor;JJ)Z
  */

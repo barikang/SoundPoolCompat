@@ -22,9 +22,14 @@ namespace SoundPoolCompat {
         AudioPlayer(AudioEngine *pAudioEngine);
         ~AudioPlayer();
 
-        bool init(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
+        bool initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
                   std::shared_ptr<AudioSource> pAudioSrc,
                   SLint32 androidStreamType,int streamGroupID);
+
+        bool initForDecoding(int streamID,SLEngineItf engineEngine,
+                             std::shared_ptr<AudioSource> pAudioSrc,
+                             int streamGroupID);
+
 
         bool enqueueBuffer();
         void resetBuffer();
@@ -52,14 +57,24 @@ namespace SoundPoolCompat {
         SLVolumeItf _fdPlayerVolume;
         SLAndroidConfigurationItf _fdPlayerConfig;
         SLPlaybackRateItf _fdPlayerPlayRate;
+        SLMetadataExtractionItf _fdPlayerMetaExtract;
 
         std::shared_ptr<AudioSource> _audioSrc;
         int _dupFD;
         AudioEngine *_pAudioEngine;
         int _currentBufIndex;
+        bool _isForDecoding;
+
+        int _channelCountKeyIndex = -1;
+        int _sampleRateKeyIndex = -1;
+        int _bitsPerSampleKeyIndex = -1;
+        int _containerSizeKeyIndex = -1;
+        int _channelMaskKeyIndex = -1;
+        int _endiannessKeyIndex = -1;
 
         friend class AudioEngine;
     };
 
 }
+
 #endif //SOUNDPOOLCOMPAT_AUDIOPLAYER_H
