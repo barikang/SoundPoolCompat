@@ -38,7 +38,6 @@ public class AudioPool {
     private EventHandler mEventHandler;
     private AudioPool.OnLoadCompleteListener mOnLoadCompleteListener;
     final private Object mLock;
-    final private ThreadPoolExecutor mThreadPool;
     final private SparseArray<AudioSource> mAudioSources = new SparseArray<>();
     private final int mAudioStreamType;
     private boolean mTryPreDecode = true;
@@ -53,7 +52,6 @@ public class AudioPool {
         mLock = new Object();
         mAudioStreamType = streamType;
         mTryPreDecode = tryPreDecode;
-        mThreadPool = new ThreadPoolExecutor(4,4,1, TimeUnit.SECONDS,new LinkedBlockingQueue<Runnable>());
 
         AudioEngine.nativeInitilizeAudioEngine();
         mReleased = false;

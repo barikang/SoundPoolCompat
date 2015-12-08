@@ -446,6 +446,10 @@ public class SoundPoolCompat {
     public void setOnLoadCompleteListener(OnLoadCompleteListener listener) {
         final boolean isNull = listener == null;
 
+        synchronized(mLock) {
+            mOnLoadCompleteListener = listener;
+        }
+
         if(mUseOpenSLES)
         {
             mAudioPool.setOnLoadCompleteListener(isNull ? null : new AudioPoolOnCompleteListener());
@@ -453,9 +457,6 @@ public class SoundPoolCompat {
         else
         {
             mSoundPool.setOnLoadCompleteListener(isNull ? null : new SoundPoolOnCompleteListener());
-        }
-        synchronized(mLock) {
-            mOnLoadCompleteListener = listener;
         }
 
     }

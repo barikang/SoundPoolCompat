@@ -9,7 +9,8 @@
 #include <SLES/OpenSLES_AndroidConfiguration.h>
 
 using namespace SoundPoolCompat;
-
+#define PCM_METADATA_VALUE_SIZE 32
+#define EMPTY_BUFFER_SIZE 1024
 
 void AudioPlayer::callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context)
 {
@@ -456,7 +457,7 @@ bool AudioPlayer::enqueueBuffer() {
         }
         else if (_isForDecoding == true )
         {
-            auto pBuffer = _audioSrc->addEmptyPCMBuffer(1024);
+            auto pBuffer = _audioSrc->addEmptyPCMBuffer(EMPTY_BUFFER_SIZE);
             SLresult result = (*_fdPlayerBufferQueue)->Enqueue(_fdPlayerBufferQueue, pBuffer->ptr,
                                                                pBuffer->size);
             if (SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u", (unsigned int) result); };
@@ -573,7 +574,40 @@ void AudioPlayer::stop()
         _stoppedTime = AudioEngine::getCurrentTime();
         _playOver = true;
     }
+}
 
+void AudioPlayer::fillOutPCMInfo()
+{
+    auto pAudioSrc = _audioSrc;
+    union {
+        SLMetadataInfo pcmMetaData;
+        char withData[PCM_METADATA_VALUE_SIZE];
+    } u;
+    auto res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _sampleRateKeyIndex,
+                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
 
+    pAudioSrc->_pcm_samplingRate = *((SLuint32*)u.pcmMetaData.data);
 
+    LOGD("sample rate = %d\n", *((SLuint32*)u.pcmMetaData.data));
+
+    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _channelCountKeyIndex,
+                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    pAudioSrc->_pcm_numChannels = *((SLuint32*)u.pcmMetaData.data);
+    LOGD("channel count = %d\n", *((SLuint32*)u.pcmMetaData.data));
+
+    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _bitsPerSampleKeyIndex,
+                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    pAudioSrc->_pcm_bitPerSample = *((SLuint32*)u.pcmMetaData.data);
+    LOGD("bits per sample = %d bits\n", *((SLuint32*)u.pcmMetaData.data));
+
+    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _containerSizeKeyIndex,
+                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    LOGD("container size = %d bits\n", *((SLuint32*)u.pcmMetaData.data));
+    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _channelMaskKeyIndex,
+                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    LOGD("channel mask = 0x%X (0x3=front left | front right, 0x4=front center)\n",
+           *((SLuint32*)u.pcmMetaData.data));
+    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _endiannessKeyIndex,
+                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    LOGD("endianness = %d (1=big, 2=little)\n", *((SLuint32*)u.pcmMetaData.data));
 }

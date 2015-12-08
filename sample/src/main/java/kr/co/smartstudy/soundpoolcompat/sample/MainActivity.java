@@ -7,14 +7,16 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
 
+import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import kr.co.smartstudy.soundpoolcompat.SoundPoolCompat;
 
 public class MainActivity extends AppCompatActivity {
     private final static String TAG = "SoundPoolCompatTest";
 
-    int[] mSoundIDs = new int[10];
+    ArrayList<Integer> mSoundIDs = new ArrayList<>();
     SoundPoolCompat mSoundPool = new SoundPoolCompat(4, AudioManager.STREAM_MUSIC,true,true);
     final Random mRand = new Random();
 
@@ -27,14 +29,6 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btn_load).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                final SparseArray<Long> startTimes = new SparseArray<Long>(10);
-                mSoundPool.setOnLoadCompleteListener(new SoundPoolCompat.OnLoadCompleteListener() {
-                    @Override
-                    public void onLoadComplete(SoundPoolCompat soundPool, int sampleId, int status) {
-                        long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
-                        Log.d(TAG,String.format("load complete %d %d [%dms]",sampleId,status,loadingTime));
-                    }
-                });
                 int[] resids = {
                         R.raw.numbers_en_1,
                         R.raw.numbers_en_2,
@@ -45,18 +39,32 @@ public class MainActivity extends AppCompatActivity {
                         R.raw.numbers_en_7,
                         R.raw.numbers_en_8,
                         R.raw.numbers_en_9,
-                        R.raw.numbers_en_10 };
+                        R.raw.numbers_en_10};
+                final AtomicInteger _count = new AtomicInteger(resids.length);
+                final SparseArray<Long> startTimes = new SparseArray<Long>(resids.length);
+                final long _startTime = System.currentTimeMillis();
+                mSoundPool.setOnLoadCompleteListener(new SoundPoolCompat.OnLoadCompleteListener() {
+                    @Override
+                    public void onLoadComplete(SoundPoolCompat soundPool, int sampleId, int status) {
+                        long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
+                        Log.d(TAG, String.format("load complete %d %d [%dms]", sampleId, status, loadingTime));
+                        if (_count.decrementAndGet() == 0) {
+                            Log.d(TAG, String.format("Total loading time = %dms", System.currentTimeMillis() - _startTime));
+                        }
+                    }
+                });
+
                 long callTimeSum = 0;
-                for(int i = 0 ; i < 10 ; i++)
-                {
+                for (int i = 0; i < resids.length; i++) {
                     long st = System.currentTimeMillis();
-                    mSoundIDs[i] = mSoundPool.load(MainActivity.this,resids[i],0);
+                    int soundID = mSoundPool.load(MainActivity.this, resids[i], 0);
+                    mSoundIDs.add(soundID);
                     long en = System.currentTimeMillis();
-                    startTimes.append(mSoundIDs[i],en);
-                    callTimeSum += (en-st);
+                    startTimes.append(soundID, en);
+                    callTimeSum += (en - st);
                 }
 
-                Log.d(TAG,"total call load time = "+callTimeSum);
+                Log.d(TAG, "total call load time = " + callTimeSum);
             }
         });
 
@@ -80,7 +88,7 @@ public class MainActivity extends AppCompatActivity {
                             {
                                 try {
                                     Thread.sleep(30 + mRand.nextInt(100));
-                                    mSoundPool.play(mSoundIDs[mRand.nextInt(10)] , 1.0f, 1.0f, 0, 0, 1.0f);
+                                    mSoundPool.play(mSoundIDs.get(mRand.nextInt(mSoundIDs.size())) , 1.0f, 1.0f, 0, 0, 1.0f);
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }
@@ -94,8 +102,17 @@ public class MainActivity extends AppCompatActivity {
                     new Thread(r,"test "+i).start();
             }
         });
+    }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.e(TAG,"onDestroy()");
+    }
 
-
+    @Override
+    protected void finalize() throws Throwable {
+        Log.e(TAG,"onFinalize()");
+        super.finalize();
     }
 }

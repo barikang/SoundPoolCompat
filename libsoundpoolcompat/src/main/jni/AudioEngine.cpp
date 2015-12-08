@@ -121,6 +121,7 @@ AudioEngine::AudioEngine()
 }
 AudioEngine::~AudioEngine()
 {
+    LOGD("AudioEngine release start");
     _released = true;
     if(_thread) {
         _threadCondition.notify_one();
@@ -488,9 +489,6 @@ static JNIEnv *getJNIEnv(void) {
             // TODO : If calling AttachCurrentThread() on a native thread
             // must call DetachCurrentThread() in future.
             // see: http://developer.android.com/guide/practices/design/jni.html
-
-            LOGD("attachCurrentThread");
-            ///*
             if (jvm->AttachCurrentThread(&env, NULL) < 0) {
                 LOGD("Failed to get the environment using AttachCurrentThread()");
                 return NULL;
@@ -498,7 +496,6 @@ static JNIEnv *getJNIEnv(void) {
                 // Success : Attached and obtained JNIEnv!
                 return env;
             }
-            // */
 
         case JNI_EVERSION :
             // Cannot recover from this error
@@ -523,6 +520,8 @@ void AudioEngine::onPlayComplete(int streamID)
 
     if(pPlayer && pPlayer->_isForDecoding) {
         pPlayer->_audioSrc->_type = AudioSource::AudioSourceType::PCM;
+        pPlayer->fillOutPCMInfo();
+
 
         JNIEnv *env = getJNIEnv();
         env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID, pPlayer->_streamGroupID,pPlayer->_streamID,0);
