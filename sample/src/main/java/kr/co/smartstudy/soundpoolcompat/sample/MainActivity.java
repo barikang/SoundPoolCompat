@@ -46,8 +46,13 @@ public class MainActivity extends AppCompatActivity {
                 mSoundPool.setOnLoadCompleteListener(new SoundPoolCompat.OnLoadCompleteListener() {
                     @Override
                     public void onLoadComplete(SoundPoolCompat soundPool, int sampleId, int status) {
-                        long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
-                        Log.d(TAG, String.format("load complete %d %d [%dms]", sampleId, status, loadingTime));
+                        synchronized (startTimes) {
+                            if(startTimes.indexOfKey(sampleId) >= 0) {
+                                long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
+                                Log.d(TAG, String.format("load complete %d %d [%dms]", sampleId, status, loadingTime));
+                            }
+                        }
+
                         if (_count.decrementAndGet() == 0) {
                             Log.d(TAG, String.format("Total loading time = %dms", System.currentTimeMillis() - _startTime));
                         }
@@ -57,11 +62,16 @@ public class MainActivity extends AppCompatActivity {
                 long callTimeSum = 0;
                 for (int i = 0; i < resids.length; i++) {
                     long st = System.currentTimeMillis();
-                    int soundID = mSoundPool.load(MainActivity.this, resids[i], 0);
-                    mSoundIDs.add(soundID);
-                    long en = System.currentTimeMillis();
-                    startTimes.append(soundID, en);
-                    callTimeSum += (en - st);
+                    synchronized (startTimes) {
+                        int soundID = mSoundPool.load(MainActivity.this, resids[i], 0);
+                        synchronized (mSoundIDs) {
+                            mSoundIDs.add(soundID);
+                        }
+                        long en = System.currentTimeMillis();
+                        startTimes.append(soundID, en);
+                        callTimeSum += (en - st);
+                    }
+
                 }
 
                 Log.d(TAG, "total call load time = " + callTimeSum);
@@ -72,6 +82,9 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 mSoundPool.unloadAll();
+                synchronized (mSoundIDs) {
+                    mSoundIDs.clear();
+                }
             }
         });
 
@@ -88,7 +101,10 @@ public class MainActivity extends AppCompatActivity {
                             {
                                 try {
                                     Thread.sleep(30 + mRand.nextInt(100));
-                                    mSoundPool.play(mSoundIDs.get(mRand.nextInt(mSoundIDs.size())) , 1.0f, 1.0f, 0, 0, 1.0f);
+                                    synchronized (mSoundIDs) {
+                                        if (mSoundIDs.size() > 0)
+                                            mSoundPool.play(mSoundIDs.get(mRand.nextInt(mSoundIDs.size())), 1.0f, 1.0f, 0, 0, 1.0f);
+                                    }
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
                                 }

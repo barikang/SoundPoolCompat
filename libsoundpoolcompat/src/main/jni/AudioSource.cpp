@@ -57,6 +57,7 @@ int AudioSource::createAudioSource()
     std::shared_ptr<AudioSource> audioSrc(new AudioSource());
     std::lock_guard<std::mutex> guard(g_mutex);
     const int audioID = g_currentAudioId++;
+    audioSrc->_audioID = audioID;
     g_id2source[audioID] = audioSrc;
     return audioID;
 }
@@ -119,18 +120,29 @@ AudioSource::AudioSource()
         ,_pcm_numChannels(0)
         ,_pcm_samplingRate(0)
         ,_pcm_bitPerSample(0)
+        ,_pcm_containerSize(0)
+        ,_pcm_byteOrder(0)
         ,_fd(0)
         ,_fd_offset(0)
         ,_fd_length(0)
+        ,_decodingState(DecodingState::None)
+        ,_audioID(-1)
 {
 }
 
 AudioSource::~AudioSource()
 {
+    closeFD();
+}
+
+void AudioSource::closeFD()
+{
     if(_fd > 0)
     {
         close(_fd);
+        _fd = 0;
     }
+
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////

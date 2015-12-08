@@ -47,7 +47,6 @@ namespace SoundPoolCompat {
         void setRepeatCount(int streamID,int repeatCount);
     private:
         std::shared_ptr<AudioPlayer>  getAudioPlayer(int streamID);
-        int releaseUnusedAudioPlayer();
 
         void onPlayComplete(int streamID);
 

@@ -29,6 +29,11 @@ namespace SoundPoolCompat {
             FileDescriptor,
             Uri,
         };
+        enum DecodingState {
+            None,
+            DecodingNow,
+            Completed
+        };
 
     private:
         AudioSource();
@@ -36,13 +41,16 @@ namespace SoundPoolCompat {
         ~AudioSource();
         std::shared_ptr<PCMBuffer> getPCMBuffer(size_t idx);
         std::shared_ptr<PCMBuffer> addEmptyPCMBuffer(int size);
+        void closeFD();
+
 
         AudioSourceType _type;
-
         std::vector<std::shared_ptr<PCMBuffer> > _pcm_nativeBuffers;
         int _pcm_numChannels;
         int _pcm_samplingRate;
         int _pcm_bitPerSample;
+        int _pcm_containerSize;
+        int _pcm_byteOrder;
 
 
         int _fd;
@@ -50,6 +58,8 @@ namespace SoundPoolCompat {
         int64_t _fd_length;
 
         std::string _uri_path;
+        std::atomic<DecodingState> _decodingState;
+        int _audioID;
 
     private:
         static int g_currentAudioId;

@@ -198,7 +198,7 @@ bool AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf
         auto result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
                                                          &audioSrc, &audioSnk, useBufferQueue ? 5 : 6, ids, req);
         if (SL_RESULT_SUCCESS != result) {
-            LOGE("create audio player fail");
+            //LOGE("create audio player fail");
             break;
         }
 
@@ -569,11 +569,16 @@ void AudioPlayer::stop()
 
     auto result = (*_fdPlayerPlay)->SetPlayState(_fdPlayerPlay, SL_PLAYSTATE_STOPPED);
     if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState stop fail "); };
+    if(_isForDecoding) {
+        AudioSource::DecodingState expectedState = AudioSource::DecodingState::DecodingNow;
+        if (_audioSrc->_decodingState.compare_exchange_weak(expectedState,
+                                                            AudioSource::DecodingState::None)) {
+            LOGD("%d AudioSource decoding stopped", _audioSrc->_audioID);
 
-    if(_playOver == false) {
-        _stoppedTime = AudioEngine::getCurrentTime();
-        _playOver = true;
+        }
     }
+    _stoppedTime = AudioEngine::getCurrentTime();
+    _playOver = true;
 }
 
 void AudioPlayer::fillOutPCMInfo()
@@ -585,29 +590,21 @@ void AudioPlayer::fillOutPCMInfo()
     } u;
     auto res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _sampleRateKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
-
     pAudioSrc->_pcm_samplingRate = *((SLuint32*)u.pcmMetaData.data);
-
-    LOGD("sample rate = %d\n", *((SLuint32*)u.pcmMetaData.data));
 
     res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _channelCountKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_numChannels = *((SLuint32*)u.pcmMetaData.data);
-    LOGD("channel count = %d\n", *((SLuint32*)u.pcmMetaData.data));
 
     res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _bitsPerSampleKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_bitPerSample = *((SLuint32*)u.pcmMetaData.data);
-    LOGD("bits per sample = %d bits\n", *((SLuint32*)u.pcmMetaData.data));
 
     res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _containerSizeKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
-    LOGD("container size = %d bits\n", *((SLuint32*)u.pcmMetaData.data));
-    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _channelMaskKeyIndex,
-                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
-    LOGD("channel mask = 0x%X (0x3=front left | front right, 0x4=front center)\n",
-           *((SLuint32*)u.pcmMetaData.data));
+    pAudioSrc->_pcm_containerSize = *((SLuint32*)u.pcmMetaData.data);
+
     res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _endiannessKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
-    LOGD("endianness = %d (1=big, 2=little)\n", *((SLuint32*)u.pcmMetaData.data));
+    pAudioSrc->_pcm_containerSize = *((SLuint32*)u.pcmMetaData.data);
 }

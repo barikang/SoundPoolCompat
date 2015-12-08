@@ -206,7 +206,8 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
             break;
 
         auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
-        if(pAudioSrc == nullptr)
+        auto decodingState = pAudioSrc->_decodingState.load();
+        if(pAudioSrc == nullptr ||decodingState == AudioSource::DecodingState::DecodingNow)
             break;
 
         if(!incAudioPlayerCount()) {
@@ -254,13 +255,27 @@ int AudioEngine::decodeAudio(int audioID,int streamGroupID)
         if(pAudioSrc == nullptr)
             break;
 
+        AudioSource::DecodingState expectedState = AudioSource::DecodingState::None;
+        if(!pAudioSrc->_decodingState.compare_exchange_weak(expectedState,AudioSource::DecodingState::DecodingNow))
+            break;
+
+        pAudioSrc->_pcm_nativeBuffers.clear();
+
         while(!incAudioPlayerCount()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         streamID = _currentAudioStreamID.fetch_add(1);
 
         std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
-        auto initPlayer = pPlayer->initForDecoding(streamID,_engineEngine,pAudioSrc,streamGroupID);
+        bool initPlayer = false;
+        for(int i = 0 ; i < 500 ; i++)
+        {
+            initPlayer = pPlayer->initForDecoding(streamID,_engineEngine,pAudioSrc,streamGroupID);
+            if(initPlayer)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
         if (!initPlayer){
             LOGE( "%s,%d message:create player fail", __func__, __LINE__);
             streamID = -1;
@@ -302,27 +317,6 @@ void AudioEngine::decAudioPlayerCount()
 
 }
 
-
-int AudioEngine::releaseUnusedAudioPlayer()
-{
-    std::lock_guard<std::recursive_mutex> guard(_recurMutex);
-    const double currentTime = AudioEngine::getCurrentTime();
-    for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end();)
-    {
-        auto pAudioPlayer = iter->second;
-        if(pAudioPlayer->_playOver && currentTime-pAudioPlayer->_stoppedTime  > DELAY_TIME_TO_REMOVE)
-        {
-            iter = _audioPlayers.erase(iter);
-            continue;
-        }
-        iter++;
-    }
-    return (int)_audioPlayers.size();
-}
-
-
-
-
 void AudioEngine::pause(int streamID)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
@@ -350,6 +344,7 @@ void AudioEngine::stop(int streamID)
         _audioPlayers.erase(streamID);
     }
 }
+
 float AudioEngine::getCurrentTime(int streamID)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
@@ -365,26 +360,15 @@ float AudioEngine::getCurrentTime(int streamID)
 void AudioEngine::stopAll(int streamGroupID,bool wait)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
-    //double maxRemoveTime = 0;
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); ) {
         auto pPlayer = iter->second;
         if (streamGroupID == 0 || pPlayer->_streamGroupID == streamGroupID) {
-            //removeStreamIDS.push_back(iter->first);
             pPlayer->stop();
             iter = _audioPlayers.erase(iter);
             continue;
         }
         iter++;
     }
-    /*
-    if(wait) {
-        double remainTime = maxRemoveTime - AudioEngine::getCurrentTime();
-        if(remainTime > 0)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds((int)(remainTime*1000)));
-        }
-    }
-     */
 
 }
 
@@ -513,22 +497,28 @@ void AudioEngine::onPlayComplete(int streamID)
 
     auto pPlayer = getAudioPlayer(streamID);
     if(pPlayer) {
+        if(pPlayer->_isForDecoding) {
+            auto pAudioSrc = pPlayer->_audioSrc;
+            pAudioSrc->_type = AudioSource::AudioSourceType::PCM;
+            pPlayer->fillOutPCMInfo();
+            pAudioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
+            pAudioSrc->closeFD();
+        }
+
         std::lock_guard<std::recursive_mutex> guard(_recurMutex);
         pPlayer->stop();
         _audioPlayers.erase(streamID);
-    }
 
-    if(pPlayer && pPlayer->_isForDecoding) {
-        pPlayer->_audioSrc->_type = AudioSource::AudioSourceType::PCM;
-        pPlayer->fillOutPCMInfo();
+        if(pPlayer->_isForDecoding) {
+            JNIEnv *env = getJNIEnv();
+            env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID, pPlayer->_streamGroupID,pPlayer->_streamID,0);
+            JavaVM *jvm = gJavaVM;
+            jvm->DetachCurrentThread();
 
-
-        JNIEnv *env = getJNIEnv();
-        env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID, pPlayer->_streamGroupID,pPlayer->_streamID,0);
-        JavaVM *jvm = gJavaVM;
-        jvm->DetachCurrentThread();
+        }
 
     }
+
 
 }
 
