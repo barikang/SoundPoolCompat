@@ -47,7 +47,7 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onLoadComplete(SoundPoolCompat soundPool, int sampleId, int status) {
                         synchronized (startTimes) {
-                            if(startTimes.indexOfKey(sampleId) >= 0) {
+                            if (startTimes.indexOfKey(sampleId) >= 0) {
                                 long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
                                 Log.d(TAG, String.format("load complete %d %d [%dms]", sampleId, status, loadingTime));
                             }
@@ -116,6 +116,20 @@ public class MainActivity extends AppCompatActivity {
 
                 for (int i = 0; i < 10; i++)
                     new Thread(r,"test "+i).start();
+            }
+        });
+
+        findViewById(R.id.btn_pause_all).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mSoundPool.autoPause();
+            }
+        });
+
+        findViewById(R.id.btn_resume_all).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mSoundPool.autoResume();
             }
         });
     }

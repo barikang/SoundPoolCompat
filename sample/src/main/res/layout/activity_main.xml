@@ -27,4 +27,18 @@
         android:layout_height="wrap_content"
         android:text="plays random"
         android:id="@+id/btn_plays"/>
+
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="pause all"
+        android:id="@+id/btn_pause_all"/>
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="resume all"
+        android:id="@+id/btn_resume_all"/>
+
 </LinearLayout>
