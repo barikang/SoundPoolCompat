@@ -217,9 +217,9 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         streamID = _currentAudioStreamID.fetch_add(1);
 
         std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
-        auto initPlayer = pPlayer->initForPlay(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
-        if (!initPlayer){
-            LOGE( "%s,%d message:create player fail", __func__, __LINE__);
+        SLresult resultInitPlayer = pPlayer->initForPlay(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
+        if (resultInitPlayer != SL_RESULT_SUCCESS){
+            LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
             streamID = -1;
             break;
         }
@@ -267,17 +267,17 @@ int AudioEngine::decodeAudio(int audioID,int streamGroupID)
         streamID = _currentAudioStreamID.fetch_add(1);
 
         std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
-        bool initPlayer = false;
+        SLresult  resultInitPlayer = false;
         for(int i = 0 ; i < 500 ; i++)
         {
-            initPlayer = pPlayer->initForDecoding(streamID,_engineEngine,pAudioSrc,streamGroupID);
-            if(initPlayer)
+            resultInitPlayer = pPlayer->initForDecoding(streamID,_engineEngine,pAudioSrc,streamGroupID);
+            if(resultInitPlayer != SL_RESULT_MEMORY_FAILURE)
                 break;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        if (!initPlayer){
-            LOGE( "%s,%d message:create player fail", __func__, __LINE__);
+        if (resultInitPlayer != SL_RESULT_SUCCESS){
+            LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
             streamID = -1;
             break;
         }

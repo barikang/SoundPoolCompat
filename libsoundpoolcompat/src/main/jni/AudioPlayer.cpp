@@ -106,12 +106,12 @@ AudioPlayer::~AudioPlayer()
     LOGD("[%d] AudioPlayer destoryed",_streamID);
 }
 
-bool AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
+SLresult AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
                               std::shared_ptr<AudioSource> pAudioSrc,
                               SLint32 androidStreamType,int streamGroupID)
 {
     //LOGD("[%d] Player Init : ",streamID);
-    bool ret = false;
+    SLresult result = SL_RESULT_UNKNOWN_ERROR;
     _streamID = streamID;
     _streamGroupID = streamGroupID;
     _isForDecoding = false;
@@ -188,7 +188,7 @@ bool AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf
                 ,SL_BOOLEAN_TRUE
         };
 
-        auto result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
+        result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
                                                          &audioSrc, &audioSnk, useBufferQueue ? 5 : 6, ids, req);
         if (SL_RESULT_SUCCESS != result) {
             //LOGE("create audio player fail");
@@ -252,18 +252,18 @@ bool AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf
 
 
 
-        ret = true;
+        result = SL_RESULT_SUCCESS;
     } while (0);
 
-    return ret;
+    return result;
 }
 
 
-bool AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
+SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
                                   std::shared_ptr<AudioSource> pAudioSrc,
                                   int streamGroupID)
 {
-    bool ret = false;
+    SLresult result = SL_RESULT_UNKNOWN_ERROR;
     _streamID = streamID;
     _streamGroupID = streamGroupID;
     _isForDecoding = true;
@@ -324,7 +324,7 @@ bool AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
                 ,SL_BOOLEAN_TRUE
         };
 
-        auto result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
+        result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
                                                          &audioSrc, &audioSnk, 4, ids, req);
         if (SL_RESULT_SUCCESS != result) {
             LOGE("create audio player fail");
@@ -410,10 +410,10 @@ bool AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
             }
         }
 
-        ret = true;
+        result = SL_RESULT_SUCCESS;
     } while (0);
 
-    return ret;
+    return result;
 }
 
 

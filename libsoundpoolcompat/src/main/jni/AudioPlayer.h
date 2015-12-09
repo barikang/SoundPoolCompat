@@ -22,11 +22,11 @@ namespace SoundPoolCompat {
         AudioPlayer(AudioEngine *pAudioEngine);
         ~AudioPlayer();
 
-        bool initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
+        SLresult initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
                   std::shared_ptr<AudioSource> pAudioSrc,
                   SLint32 androidStreamType,int streamGroupID);
 
-        bool initForDecoding(int streamID,SLEngineItf engineEngine,
+        SLresult initForDecoding(int streamID,SLEngineItf engineEngine,
                              std::shared_ptr<AudioSource> pAudioSrc,
                              int streamGroupID);
 
