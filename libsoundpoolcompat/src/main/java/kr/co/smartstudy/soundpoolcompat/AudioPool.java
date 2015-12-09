@@ -121,7 +121,7 @@ public class AudioPool {
         if(mReleased)
             return -1;
 
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN && mTryPreDecode) {
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH && mTryPreDecode) {
             AudioSource audioSrc = AudioSource.createFromFD(fd, offset, length);
             synchronized (mAudioSources) {
                 mAudioSources.append(audioSrc.getAudioID(), audioSrc);

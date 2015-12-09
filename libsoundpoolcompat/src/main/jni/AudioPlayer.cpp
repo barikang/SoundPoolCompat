@@ -133,26 +133,19 @@ bool AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf
         {
             useBufferQueue = true;
 
-            SLuint32 containerSize = 8;
-            const int bitPerSample = _audioSrc->_pcm_bitPerSample;
-            const int samplingRate = _audioSrc->_pcm_samplingRate;
-            const int numChannels = _audioSrc->_pcm_numChannels;
-            if (bitPerSample == 8)
-                containerSize = 8;
-            else if (bitPerSample == 16)
-                containerSize = 16;
-            else if (bitPerSample > 16)
-                containerSize = 32;
-            else {
-                LOGD("Not suppoert bitPerSample %d", bitPerSample);
-            }
-            SLuint32 speaker = numChannels == 1 ? SL_SPEAKER_FRONT_CENTER : (SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT);
+            const SLuint32 bitPerSample = _audioSrc->_pcm_bitPerSample;
+            const SLuint32 samplingRate = _audioSrc->_pcm_samplingRate;
+            const SLuint32 numChannels = _audioSrc->_pcm_numChannels;
+            const SLuint32 containerSize = _audioSrc->_pcm_containerSize;
+            const SLuint32 byteOrder = _audioSrc->_pcm_byteOrder;
+
+            const SLuint32 speaker = numChannels == 1 ? SL_SPEAKER_FRONT_CENTER : (SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT);
 
             loc_bufq = { SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
-            format_pcm = {SL_DATAFORMAT_PCM, (SLuint32) numChannels,
-                          (SLuint32) (samplingRate * 1000),
-                          (SLuint32) bitPerSample, containerSize,
-                          speaker, SL_BYTEORDER_LITTLEENDIAN};
+            format_pcm = {SL_DATAFORMAT_PCM, numChannels,
+                           (samplingRate * 1000),
+                           bitPerSample, containerSize,
+                          speaker, byteOrder};
 
             audioSrc = {&loc_bufq, &format_pcm};
         }
@@ -393,9 +386,11 @@ bool AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
                 result = (*_fdPlayerMetaExtract)->GetKey(_fdPlayerMetaExtract, i, keySize, keyInfo);
                 if(SL_RESULT_SUCCESS != result){ LOGE("GetKey error"); return false; };
 
-                LOGD("key[%d] size=%d, name=%s \tvalue size=%d encoding=0x%X langCountry=%s\n",
+                /*
+                  LOGD("key[%d] size=%d, name=%s \tvalue size=%d encoding=0x%X langCountry=%s\n",
                      i, (int) keyInfo->size, keyInfo->data,(int) valueSize, keyInfo->encoding,
                      keyInfo->langCountry);
+                */
                 if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_NUMCHANNELS)) {
                     _channelCountKeyIndex = i;
                 } else if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_SAMPLERATE)) {
@@ -602,9 +597,10 @@ void AudioPlayer::fillOutPCMInfo()
 
     res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _containerSizeKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+
     pAudioSrc->_pcm_containerSize = *((SLuint32*)u.pcmMetaData.data);
 
     res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _endiannessKeyIndex,
                                        PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
-    pAudioSrc->_pcm_containerSize = *((SLuint32*)u.pcmMetaData.data);
+    pAudioSrc->_pcm_byteOrder = *((SLuint32*)u.pcmMetaData.data);
 }

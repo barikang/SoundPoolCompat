@@ -28,10 +28,13 @@
 #include <chrono>
 #include <deque>
 
-
-
 #define SOUNDPOOLCOMPAT_TAG "SoundPoolCompat"
+
+#ifdef SOUNDPOOLCOMPAT_DEBUG
 #define LOGD(...)  __android_log_print(ANDROID_LOG_DEBUG,SOUNDPOOLCOMPAT_TAG,__VA_ARGS__)
+#else
+#define LOGD(...)
+#endif
 #define LOGE(...)  __android_log_print(ANDROID_LOG_ERROR,SOUNDPOOLCOMPAT_TAG,__VA_ARGS__)
 #define CHECK_SL_RESULT(x) if(x != SL_RESULT_SUCCESS) { LOGE("%s:%s(%d) failed",__FILE__,__func__,__LINE__); }
 

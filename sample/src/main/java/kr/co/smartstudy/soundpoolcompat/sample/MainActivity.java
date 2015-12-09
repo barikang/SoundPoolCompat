@@ -40,7 +40,8 @@ public class MainActivity extends AppCompatActivity {
                         R.raw.numbers_en_8,
                         R.raw.numbers_en_9,
                         R.raw.numbers_en_10};
-                final AtomicInteger _count = new AtomicInteger(resids.length);
+                final int loadCnt = 60;
+                final AtomicInteger _count = new AtomicInteger(loadCnt);
                 final SparseArray<Long> startTimes = new SparseArray<Long>(resids.length);
                 final long _startTime = System.currentTimeMillis();
                 mSoundPool.setOnLoadCompleteListener(new SoundPoolCompat.OnLoadCompleteListener() {
@@ -60,10 +61,10 @@ public class MainActivity extends AppCompatActivity {
                 });
 
                 long callTimeSum = 0;
-                for (int i = 0; i < resids.length; i++) {
+                for (int i = 0; i < loadCnt; i++) {
                     long st = System.currentTimeMillis();
                     synchronized (startTimes) {
-                        int soundID = mSoundPool.load(MainActivity.this, resids[i], 0);
+                        int soundID = mSoundPool.load(MainActivity.this, resids[i%resids.length], 0);
                         synchronized (mSoundIDs) {
                             mSoundIDs.add(soundID);
                         }
@@ -142,7 +143,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void finalize() throws Throwable {
-        Log.e(TAG,"onFinalize()");
+        Log.e(TAG, "onFinalize()");
         super.finalize();
     }
 }
