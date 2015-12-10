@@ -13,6 +13,78 @@
 //
 using namespace SoundPoolCompat;
 
+//JNIHelp
+typedef struct JniMethodInfo_
+{
+    jclass      classID;
+    jmethodID   methodID;
+} JniMethodInfo;
+
+extern "C"
+{
+static JavaVM *gJavaVM = nullptr;
+static JniMethodInfo callbackMethodInfo;
+
+jint JNI_OnLoad(JavaVM *vm, void *reserved)
+{
+    gJavaVM = vm;
+    JNIEnv* env;
+    if (vm->GetEnv((void **)&env, JNI_VERSION_1_4) != JNI_OK) {
+        LOGD("GETENVFAILEDONLOAD");
+        return -1;
+    }
+
+    jclass clazz = env->FindClass(CLASS_NAME);
+    callbackMethodInfo.methodID = env->GetStaticMethodID(clazz,"onDecodingComplete", "(III)V");
+    callbackMethodInfo.classID = (jclass) env->NewGlobalRef(clazz);
+
+    return JNI_VERSION_1_4;
+}
+
+
+// get env and cache it
+static JNIEnv *getJNIEnv(void) {
+    JavaVM *jvm = gJavaVM;
+    if (NULL == jvm) {
+        return NULL;
+    }
+
+    JNIEnv *env = NULL;
+    // get jni environment
+    jint ret = jvm->GetEnv((void **) &env, JNI_VERSION_1_4);
+
+    switch (ret) {
+        case JNI_OK :
+            // Success!
+            return env;
+
+        case JNI_EDETACHED :
+            // Thread not attached
+
+            // TODO : If calling AttachCurrentThread() on a native thread
+            // must call DetachCurrentThread() in future.
+            // see: http://developer.android.com/guide/practices/design/jni.html
+            if (jvm->AttachCurrentThread(&env, NULL) < 0) {
+                LOGD("Failed to get the environment using AttachCurrentThread()");
+                return NULL;
+            } else {
+                // Success : Attached and obtained JNIEnv!
+                return env;
+            }
+
+        case JNI_EVERSION :
+            // Cannot recover from this error
+            LOGD("JNI interface version 1.4 not supported");
+        default :
+            LOGD("Failed to get the environment using GetEnv()");
+            return NULL;
+    }
+}
+
+}
+///////////////////////////////////////////////////////////////////
+
+
 std::shared_ptr<AudioEngine> AudioEngine::g_audioEngine(nullptr);
 int AudioEngine::g_refCount = 0;
 std::mutex AudioEngine::g_mutex;
@@ -72,7 +144,6 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
     while(true)
     {
-        LOGD("------------");
         {
             std::unique_lock<std::mutex> lock(pAudioEngine->_queueMutex);
 
@@ -92,9 +163,7 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
         {
             AudioTask task = priorAudioTaskQueue.top();
             priorAudioTaskQueue.pop();
-            LOGD("Task = %d %d %d",task.taskType,task.audioID,task.streamID);
 
-            // ~~~
             if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI)
             {
                 auto pAudioPlayer = pAudioEngine->getAudioPlayer(task.streamID);
@@ -122,7 +191,6 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
             }
             else if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE)
             {
-
                 auto pAudioSrc = AudioSource::getSharedPtrAudioSource(task.audioID);
                 if(pAudioSrc == nullptr)
                     continue;
@@ -133,19 +201,16 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
                 pAudioSrc->_pcm_nativeBuffers.clear();
 
-                if(!pAudioEngine->incAudioPlayerCount()) {
-                    priorAudioTaskQueue.push(task);
-                    break;
-                }
-                int newStreamID = pAudioEngine->_currentAudioStreamID.fetch_add(1);
+                const int newStreamID = pAudioEngine->_currentAudioStreamID.fetch_add(1);
 
                 std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(pAudioEngine));
                 SLresult  resultInitPlayer = false;
                 resultInitPlayer = pPlayer->initForDecoding(newStreamID,pAudioEngine->_engineEngine,pAudioSrc,task.streamGroupID);
 
+                // Try it next;
                 if(resultInitPlayer == SL_RESULT_MEMORY_FAILURE)
                 {
-                    LOGD("hmm.. memory");
+                    pAudioSrc->_decodingState.store(AudioSource::DecodingState::None);
                     priorAudioTaskQueue.push(task);
                     break;
                 }
@@ -171,20 +236,18 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
         }
     }
 
+    JNIEnv *env = getJNIEnv();
+    gJavaVM->DetachCurrentThread();
+
     LOGD("AudioEngine worker thread is finished");
 }
 
-void AudioEngine::enqueueFinishedPlay(int streamID)
+void AudioEngine::enqueueTask(const AudioTask& task)
 {
-    {
-        std::unique_lock<std::mutex> lock(_queueMutex);
-        AudioTask task;
-        task.taskType = SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI;
-        task.audioID = -1;
-        task.streamID = streamID;
-        _queueTask.push_back(task);
-    }
+    std::unique_lock<std::mutex> lock(_queueMutex);
+    _queueTask.push_back(task);
     _threadCondition.notify_one();
+
 }
 
 AudioEngine::AudioEngine()
@@ -194,7 +257,6 @@ AudioEngine::AudioEngine()
         , _outputMixObject(nullptr)
         , _released(false)
         , _thread(nullptr)
-        ,_currentAudioPlayerCount(0)
 {
 
 }
@@ -286,13 +348,9 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
 
         auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
         auto decodingState = pAudioSrc->_decodingState.load();
-        if(pAudioSrc == nullptr ||decodingState == AudioSource::DecodingState::DecodingNow)
+        if(pAudioSrc == nullptr || decodingState == AudioSource::DecodingState::DecodingNow)
             break;
 
-        if(!incAudioPlayerCount()) {
-            LOGD("Skip play. exceed max audioplayer count. AudioID : %d",audioID);
-            break;
-        }
         streamID = _currentAudioStreamID.fetch_add(1);
 
         std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
@@ -323,40 +381,12 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
 
 int AudioEngine::decodeAudio(int audioID,int streamGroupID)
 {
-    AudioTask task;
-    task.taskType = SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE;
-    task.audioID = audioID;
-    task.streamGroupID = streamGroupID;
-    {
-        std::unique_lock <std::mutex> lock(_queueMutex);
-        _queueTask.push_back(task);
-    }
-    _threadCondition.notify_one();
-
+    AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE,audioID,-1,streamGroupID);
+    enqueueTask(task);
     return 0;
-
 }
 
-bool AudioEngine::incAudioPlayerCount()
-{
-    bool overMax = false;
-    for(;;) {
-        int cnt = _currentAudioPlayerCount.load();
-        if(cnt >= MAX_AUDIOPLAYER_COUNT) {
-            overMax = true;
-            break;
-        }
-        if(_currentAudioPlayerCount.compare_exchange_weak(cnt,cnt+1))
-            break;
-    }
 
-    return !overMax;
-}
-void AudioEngine::decAudioPlayerCount()
-{
-    _currentAudioPlayerCount.fetch_sub(1);
-
-}
 
 void AudioEngine::pause(int streamID)
 {
@@ -464,74 +494,6 @@ void AudioEngine::setRepeatCount(int streamID,int repeatCount)
 
 ////////////////////////////////////////////////////
 
-typedef struct JniMethodInfo_
-{
-    jclass      classID;
-    jmethodID   methodID;
-} JniMethodInfo;
-
-extern "C"
-{
-static JavaVM *gJavaVM = nullptr;
-static JniMethodInfo callbackMethodInfo;
-
-jint JNI_OnLoad(JavaVM *vm, void *reserved)
-{
-    gJavaVM = vm;
-    JNIEnv* env;
-    if (vm->GetEnv((void **)&env, JNI_VERSION_1_4) != JNI_OK) {
-        LOGD("GETENVFAILEDONLOAD");
-        return -1;
-    }
-
-    jclass clazz = env->FindClass(CLASS_NAME);
-    callbackMethodInfo.methodID = env->GetStaticMethodID(clazz,"onDecodingComplete", "(III)V");
-    callbackMethodInfo.classID = (jclass) env->NewGlobalRef(clazz);
-
-    return JNI_VERSION_1_4;
-}
-
-
-// get env and cache it
-static JNIEnv *getJNIEnv(void) {
-    JavaVM *jvm = gJavaVM;
-    if (NULL == jvm) {
-        return NULL;
-    }
-
-    JNIEnv *env = NULL;
-    // get jni environment
-    jint ret = jvm->GetEnv((void **) &env, JNI_VERSION_1_4);
-
-    switch (ret) {
-        case JNI_OK :
-            // Success!
-            return env;
-
-        case JNI_EDETACHED :
-            // Thread not attached
-
-            // TODO : If calling AttachCurrentThread() on a native thread
-            // must call DetachCurrentThread() in future.
-            // see: http://developer.android.com/guide/practices/design/jni.html
-            if (jvm->AttachCurrentThread(&env, NULL) < 0) {
-                LOGD("Failed to get the environment using AttachCurrentThread()");
-                return NULL;
-            } else {
-                // Success : Attached and obtained JNIEnv!
-                return env;
-            }
-
-        case JNI_EVERSION :
-            // Cannot recover from this error
-            LOGD("JNI interface version 1.4 not supported");
-        default :
-            LOGD("Failed to get the environment using GetEnv()");
-            return NULL;
-    }
-}
-
-}
 
 void AudioEngine::onPlayComplete(int streamID)
 {
@@ -546,15 +508,17 @@ void AudioEngine::onPlayComplete(int streamID)
             pAudioSrc->closeFD();
         }
 
-        std::lock_guard<std::recursive_mutex> guard(_recurMutex);
-        pPlayer->stop();
-        _audioPlayers.erase(streamID);
+        {
+            std::lock_guard <std::recursive_mutex> guard(_recurMutex);
+            pPlayer->stop();
+            _audioPlayers.erase(streamID);
+        }
 
         if(pPlayer->_isForDecoding) {
             JNIEnv *env = getJNIEnv();
             env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID, pPlayer->_streamGroupID,pPlayer->_streamID,0);
             JavaVM *jvm = gJavaVM;
-            jvm->DetachCurrentThread();
+            //jvm->DetachCurrentThread();
 
         }
 

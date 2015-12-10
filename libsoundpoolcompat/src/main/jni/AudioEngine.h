@@ -16,11 +16,14 @@ namespace SoundPoolCompat {
 
     struct AudioTask
     {
-
         int taskType;
         int audioID = -1;
         int streamID = -1;
         int streamGroupID = -1;
+        AudioTask() {};
+        AudioTask(int _taskType,int _audioID,int _streamID,int _streamGroupID) :
+                taskType(_taskType),audioID(_audioID),streamID(_streamID),streamGroupID(_streamGroupID)
+        {};
 
     };
 
@@ -52,10 +55,12 @@ namespace SoundPoolCompat {
         void stop(int streamID);
         float getCurrentTime(int streamID);
         void stopAll(int streamGroupID,bool wait);
-        void enqueueFinishedPlay(int streamID);
+
         void setVolume(int streamID,float volume);
         void setPlayRate(int streamID,float playRate);
         void setRepeatCount(int streamID,int repeatCount);
+
+        void enqueueTask(const AudioTask& task);
     private:
         std::shared_ptr<AudioPlayer>  getAudioPlayer(int streamID);
 
@@ -63,8 +68,6 @@ namespace SoundPoolCompat {
 
         bool init();
         static void threadFunc(AudioEngine* audioEngine);
-        bool incAudioPlayerCount();
-        void decAudioPlayerCount();
 
 
         // engine interfaces
@@ -78,7 +81,6 @@ namespace SoundPoolCompat {
         std::unordered_map<int, std::shared_ptr<AudioPlayer> >  _audioPlayers;
 
         std::atomic<int> _currentAudioStreamID;
-        std::atomic<int> _currentAudioPlayerCount;
         std::recursive_mutex _recurMutex;
 
         std::mutex _queueMutex;

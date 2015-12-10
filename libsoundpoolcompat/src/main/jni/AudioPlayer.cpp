@@ -10,7 +10,7 @@
 
 using namespace SoundPoolCompat;
 #define PCM_METADATA_VALUE_SIZE 32
-#define EMPTY_BUFFER_SIZE 1024
+#define EMPTY_BUFFER_SIZE 4096
 
 void AudioPlayer::callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context)
 {
@@ -30,8 +30,11 @@ void AudioPlayer::callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 
             AudioPlayer *pAudioPlayer = (AudioPlayer *) context;
             LOGD("[%d] callback playevent : end", pAudioPlayer->_streamID);
             auto pEngine = AudioEngine::getInstance();
-            if (pEngine)
-                pEngine->enqueueFinishedPlay(pAudioPlayer->_streamID);
+            if (pEngine) {
+                AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI,-1,pAudioPlayer->_streamID,-1);
+                pEngine->enqueueTask(task);
+            }
+
         }
     }
 }
@@ -52,8 +55,10 @@ void AudioPlayer::callback_PrefetchStatus(SLPrefetchStatusItf caller,void *conte
         {
             LOGD("Prefetch error! StreamID = %d",pAudioPlayer->_streamID);
             auto pEngine = AudioEngine::getInstance();
-            if (pEngine)
-                pEngine->enqueueFinishedPlay(pAudioPlayer->_streamID);
+            if (pEngine) {
+                AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI,-1,pAudioPlayer->_streamID,-1);
+                pEngine->enqueueTask(task);
+            }
         }
     }
 
@@ -96,8 +101,6 @@ AudioPlayer::~AudioPlayer()
         _fdPlayerPlayRate = nullptr;
         _fdPlayerMetaExtract = nullptr;
     }
-
-    _pAudioEngine->decAudioPlayerCount();
 
     if(_dupFD > 0)
     {
