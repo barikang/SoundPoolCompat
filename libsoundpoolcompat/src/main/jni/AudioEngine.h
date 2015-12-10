@@ -11,7 +11,18 @@
 
 namespace SoundPoolCompat {
 
-    //class AudioPlayer;
+#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI         (1)
+#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE                    (2)
+
+    struct AudioTask
+    {
+
+        int taskType;
+        int audioID = -1;
+        int streamID = -1;
+        int streamGroupID = -1;
+
+    };
 
     class AudioEngine
     {
@@ -71,7 +82,7 @@ namespace SoundPoolCompat {
         std::recursive_mutex _recurMutex;
 
         std::mutex _queueMutex;
-        std::deque<int> _queueFinishedStreamID;
+        std::deque<AudioTask> _queueTask;
         std::condition_variable _threadCondition;
         std::thread* _thread;
         volatile bool _released;

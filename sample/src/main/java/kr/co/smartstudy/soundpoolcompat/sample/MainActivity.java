@@ -57,6 +57,7 @@ public class MainActivity extends AppCompatActivity {
                         if (_count.decrementAndGet() == 0) {
                             Log.d(TAG, String.format("Total loading time = %dms", System.currentTimeMillis() - _startTime));
                         }
+                        Log.d("kkk","- "+_count.get());
                     }
                 });
 

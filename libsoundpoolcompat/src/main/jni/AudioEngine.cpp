@@ -3,9 +3,8 @@
 #include "AudioPlayer.h"
 #include "utils.h"
 #include <inttypes.h>
+#include <queue>
 
-
-#define DELAY_TIME_TO_REMOVE    (0.5f)
 #define MAX_AUDIOPLAYER_COUNT   (28)
 #define  CLASS_NAME "kr/co/smartstudy/soundpoolcompat/AudioEngine"
 
@@ -55,43 +54,119 @@ double AudioEngine::getCurrentTime() {
 void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 {
     LOGD("AudioEngine worker thread start");
+
+    auto compareFunc = [](AudioTask a, AudioTask b) {
+        if(a.taskType == b.taskType)
+        {
+            if(a.streamID == b.streamID)
+            {
+                return a.audioID > b.audioID;
+            }
+            return a.streamID > b.streamID;
+        }
+        return a.taskType > b.taskType;
+    };
+
+    std::priority_queue<AudioTask, std::vector<AudioTask>, decltype(compareFunc)> priorAudioTaskQueue(compareFunc);
+
+
     while(true)
     {
-        int streamID = -1;
+        LOGD("------------");
         {
             std::unique_lock<std::mutex> lock(pAudioEngine->_queueMutex);
 
-            while(!pAudioEngine->_released && pAudioEngine->_queueFinishedStreamID.empty())
+            while(!pAudioEngine->_released && pAudioEngine->_queueTask.empty())
                 pAudioEngine->_threadCondition.wait(lock);
 
             if(pAudioEngine->_released)
                 return;
 
-            streamID = pAudioEngine->_queueFinishedStreamID.front();
-            pAudioEngine->_queueFinishedStreamID.pop_front();
+            while(!pAudioEngine->_queueTask.empty()) {
+                priorAudioTaskQueue.push(pAudioEngine->_queueTask.front());
+                pAudioEngine->_queueTask.pop_front();
+            }
         }
-        // dodo~
 
-        auto pAudioPlayer = pAudioEngine->getAudioPlayer(streamID);
-        if(pAudioPlayer)
+        while(!priorAudioTaskQueue.empty())
         {
-            pAudioPlayer->_repeatCount--;
-            bool doStop = true;
-            if(pAudioPlayer->_isForDecoding == false) {
-                if (pAudioPlayer->_repeatCount != 0) {
-                    do {
-                        if (!pAudioPlayer->play())
-                            break;
-                        doStop = false;
+            AudioTask task = priorAudioTaskQueue.top();
+            priorAudioTaskQueue.pop();
+            LOGD("Task = %d %d %d",task.taskType,task.audioID,task.streamID);
 
-                    } while (0);
+            // ~~~
+            if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI)
+            {
+                auto pAudioPlayer = pAudioEngine->getAudioPlayer(task.streamID);
+                if(pAudioPlayer)
+                {
+                    pAudioPlayer->_repeatCount--;
+                    bool doStop = true;
+                    if(pAudioPlayer->_isForDecoding == false) {
+                        if (pAudioPlayer->_repeatCount != 0) {
+                            do {
+                                if (!pAudioPlayer->play())
+                                    break;
+                                doStop = false;
+
+                            } while (0);
+                        }
+                    }
+
+                    if(doStop)
+                    {
+                        pAudioEngine->onPlayComplete(task.streamID);
+                    }
+
                 }
             }
-
-            if(doStop)
+            else if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE)
             {
-                pAudioEngine->onPlayComplete(streamID);
+
+                auto pAudioSrc = AudioSource::getSharedPtrAudioSource(task.audioID);
+                if(pAudioSrc == nullptr)
+                    continue;
+
+                AudioSource::DecodingState expectedState = AudioSource::DecodingState::None;
+                if(!pAudioSrc->_decodingState.compare_exchange_weak(expectedState,AudioSource::DecodingState::DecodingNow))
+                    continue;
+
+                pAudioSrc->_pcm_nativeBuffers.clear();
+
+                if(!pAudioEngine->incAudioPlayerCount()) {
+                    priorAudioTaskQueue.push(task);
+                    break;
+                }
+                int newStreamID = pAudioEngine->_currentAudioStreamID.fetch_add(1);
+
+                std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(pAudioEngine));
+                SLresult  resultInitPlayer = false;
+                resultInitPlayer = pPlayer->initForDecoding(newStreamID,pAudioEngine->_engineEngine,pAudioSrc,task.streamGroupID);
+
+                if(resultInitPlayer == SL_RESULT_MEMORY_FAILURE)
+                {
+                    LOGD("hmm.. memory");
+                    priorAudioTaskQueue.push(task);
+                    break;
+                }
+
+                if (resultInitPlayer != SL_RESULT_SUCCESS){
+                    LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
+                    continue;
+                }
+                pAudioEngine->_recurMutex.lock();
+                pAudioEngine->_audioPlayers[newStreamID] = pPlayer;
+                pAudioEngine->_recurMutex.unlock();
+
+                pPlayer->enqueueBuffer();
+                pPlayer->enqueueBuffer();
+                pPlayer->play();
+
+
+
             }
+
+            // if succ
 
         }
     }
@@ -103,19 +178,23 @@ void AudioEngine::enqueueFinishedPlay(int streamID)
 {
     {
         std::unique_lock<std::mutex> lock(_queueMutex);
-        _queueFinishedStreamID.push_back(streamID);
+        AudioTask task;
+        task.taskType = SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI;
+        task.audioID = -1;
+        task.streamID = streamID;
+        _queueTask.push_back(task);
     }
     _threadCondition.notify_one();
 }
 
 AudioEngine::AudioEngine()
-: _currentAudioStreamID(1)
-, _engineObject(nullptr)
-, _engineEngine(nullptr)
-, _outputMixObject(nullptr)
-, _released(false)
-, _thread(nullptr)
-,_currentAudioPlayerCount(0)
+        : _currentAudioStreamID(1)
+        , _engineObject(nullptr)
+        , _engineEngine(nullptr)
+        , _outputMixObject(nullptr)
+        , _released(false)
+        , _thread(nullptr)
+        ,_currentAudioPlayerCount(0)
 {
 
 }
@@ -244,55 +323,17 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
 
 int AudioEngine::decodeAudio(int audioID,int streamGroupID)
 {
-    int streamID = -1;
-
-    do
+    AudioTask task;
+    task.taskType = SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE;
+    task.audioID = audioID;
+    task.streamGroupID = streamGroupID;
     {
-        if (_engineEngine == nullptr)
-            break;
+        std::unique_lock <std::mutex> lock(_queueMutex);
+        _queueTask.push_back(task);
+    }
+    _threadCondition.notify_one();
 
-        auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
-        if(pAudioSrc == nullptr)
-            break;
-
-        AudioSource::DecodingState expectedState = AudioSource::DecodingState::None;
-        if(!pAudioSrc->_decodingState.compare_exchange_weak(expectedState,AudioSource::DecodingState::DecodingNow))
-            break;
-
-        pAudioSrc->_pcm_nativeBuffers.clear();
-
-        while(!incAudioPlayerCount()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        streamID = _currentAudioStreamID.fetch_add(1);
-
-        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
-        SLresult  resultInitPlayer = false;
-        for(int i = 0 ; i < 500 ; i++)
-        {
-            resultInitPlayer = pPlayer->initForDecoding(streamID,_engineEngine,pAudioSrc,streamGroupID);
-            if(resultInitPlayer != SL_RESULT_MEMORY_FAILURE)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-
-        if (resultInitPlayer != SL_RESULT_SUCCESS){
-            LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
-            streamID = -1;
-            break;
-        }
-        _recurMutex.lock();
-        _audioPlayers[streamID] = pPlayer;
-        _recurMutex.unlock();
-
-        pPlayer->enqueueBuffer();
-        pPlayer->enqueueBuffer();
-        pPlayer->play();
-
-
-    } while (0);
-
-    return streamID;
+    return 0;
 
 }
 
