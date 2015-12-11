@@ -19,61 +19,63 @@ namespace SoundPoolCompat {
         static void callback_PrefetchStatus(SLPrefetchStatusItf caller,void *context,SLuint32 event);
 
     public:
-        AudioPlayer(AudioEngine *pAudioEngine);
+        AudioPlayer(AudioEngine *pAudioEngine,int streamID,int streamGroupID);
         ~AudioPlayer();
 
-        SLresult initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
-                  std::shared_ptr<AudioSource> pAudioSrc,
-                  SLint32 androidStreamType,int streamGroupID);
-
-        SLresult initForDecoding(int streamID,SLEngineItf engineEngine,
-                             std::shared_ptr<AudioSource> pAudioSrc,
-                             int streamGroupID);
-
+        SLresult initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc);
+        SLresult initForDecoding(const std::shared_ptr<AudioSource>& pAudioSrc);
 
         bool enqueueBuffer();
         void resetBuffer();
         void setVolume(float volume);
         void setPlayRate(float rate);
         void setRepeatCount(int loop);
+        void setAndroidStreamType(SLint32 androidStreamType);
         bool play();
         void pause();
         void resume();
         void stop();
         void fillOutPCMInfo();
+        float getCurrentTime();
 
-
-
-        int _streamID;
-        int _streamGroupID;
-        bool _playOver;
-        double _stoppedTime;
-        int _repeatCount;
-        SLPlayItf _fdPlayerPlay;
+        bool isForDecoding() { return _isForDecoding; };
 
     private:
-        SLObjectItf _fdPlayerObject;
-        SLAndroidSimpleBufferQueueItf _fdPlayerBufferQueue;
-        SLPrefetchStatusItf _fdPlayerPrefetchStatus;
-        SLVolumeItf _fdPlayerVolume;
-        SLAndroidConfigurationItf _fdPlayerConfig;
-        SLPlaybackRateItf _fdPlayerPlayRate;
-        SLMetadataExtractionItf _fdPlayerMetaExtract;
+        int _streamID;
+        int _streamGroupID;
 
-        std::shared_ptr<AudioSource> _audioSrc;
+        int _repeatCount;
+        float _volume;
+        float _playRate;
+
+        volatile bool _playOver;
+        volatile bool _inited;
+
+        SLObjectItf _itf_playerObject;
+        SLPlayItf _itf_play;
+        SLAndroidSimpleBufferQueueItf _itf_bufferQueue;
+        SLPrefetchStatusItf _itf_prefetchStatus;
+        SLVolumeItf _itf_volume;
+        SLAndroidConfigurationItf _itf_androidConfiguration;
+        SLPlaybackRateItf _itf_playerackRate;
+        SLMetadataExtractionItf _itf_metadataExtraction;
+
+        std::shared_ptr<AudioSource> _pAudioSrc;
         int _dupFD;
         AudioEngine *_pAudioEngine;
         int _currentBufIndex;
         bool _isForDecoding;
 
-        int _channelCountKeyIndex = -1;
-        int _sampleRateKeyIndex = -1;
-        int _bitsPerSampleKeyIndex = -1;
-        int _containerSizeKeyIndex = -1;
-        int _channelMaskKeyIndex = -1;
-        int _endiannessKeyIndex = -1;
+        SLint32 _androidStreamType;
+
+        int _keyIdx_ChannelCount = -1;
+        int _keyIdx_SampleRate = -1;
+        int _keyIdx_BitsPerSample = -1;
+        int _keyIdx_ContainerSize = -1;
+        int _keyIdx_Endianness = -1;
 
         friend class AudioEngine;
+        friend class AudioTask;
     };
 
 }

@@ -7,21 +7,21 @@
 
 using namespace SoundPoolCompat;
 
-PCMBuffer::PCMBuffer(int _size)
+DataBuffer::DataBuffer(int _size)
 {
     this->ptr = malloc(_size);
     this->size = _size;
     memset(this->ptr,0,_size);
 }
 
-PCMBuffer::PCMBuffer(void *_ptr,int _offset,int _size)
+DataBuffer::DataBuffer(void *_ptr,int _offset,int _size)
 {
     this->ptr = malloc(_size);
     this->size = _size;
     memcpy(this->ptr,((char*)_ptr)+_offset,_size );
 }
 
-PCMBuffer::~PCMBuffer()
+DataBuffer::~DataBuffer()
 {
     if(this->ptr)
         free(this->ptr);
@@ -34,17 +34,17 @@ std::unordered_map<int, std::shared_ptr<AudioSource> > AudioSource::g_id2source;
 ///
 
 
-std::shared_ptr<PCMBuffer> AudioSource::getPCMBuffer(size_t idx)
+std::shared_ptr<DataBuffer> AudioSource::getPCMBuffer(int idx)
 {
-    if(idx < _pcm_nativeBuffers.size())
+    if(0 <= idx && idx < _pcm_nativeBuffers.size())
         return _pcm_nativeBuffers[idx];
     return nullptr;
 
 }
 
-std::shared_ptr<PCMBuffer> AudioSource::addEmptyPCMBuffer(int size)
+std::shared_ptr<DataBuffer> AudioSource::addEmptyPCMBuffer(int size)
 {
-    std::shared_ptr<PCMBuffer> ret(new PCMBuffer(size));
+    std::shared_ptr<DataBuffer> ret(new DataBuffer(size));
     _pcm_nativeBuffers.push_back(ret);
     return ret;
 }
@@ -93,6 +93,7 @@ bool AudioSource::setAudioSourceFileDescriptor(int audioID,int fd,int64_t offset
         audioSrc->_fd = dup(fd);
         audioSrc->_fd_offset = offset;
         audioSrc->_fd_length = length;
+        audioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
         LOGD("Setting fd : %d offset %d  leng %d",audioSrc->_fd,(int)offset,(int)length);
         return true;
     }
@@ -107,6 +108,7 @@ bool AudioSource::setAudioSourceURI(int audioID,const std::string& uri)
     {
         audioSrc->_type = AudioSourceType::Uri;
         audioSrc->_uri_path = uri;
+        audioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
         return true;
     }
 
@@ -125,13 +127,14 @@ AudioSource::AudioSource()
         ,_fd(0)
         ,_fd_offset(0)
         ,_fd_length(0)
-        ,_decodingState(DecodingState::None)
+        ,_decodingState(DecodingState::Completed)
         ,_audioID(-1)
 {
 }
 
 AudioSource::~AudioSource()
 {
+    LOGD("[%d] AudioSource destoryed",_audioID);
     closeFD();
 }
 

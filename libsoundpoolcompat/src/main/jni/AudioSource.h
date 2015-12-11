@@ -8,16 +8,16 @@
 #include "utils.h"
 
 namespace SoundPoolCompat {
-    // PCMBuffer
-    class PCMBuffer {
+    // DataBuffer
+    class DataBuffer {
     public:
         void *ptr;
         int size;
 
     public:
-        PCMBuffer(int size);
-        PCMBuffer(void *ptr,int offset,int size);
-        ~PCMBuffer();
+        DataBuffer(int size);
+        DataBuffer(void *ptr,int offset,int size);
+        ~DataBuffer();
     };
 
     // AudioSource
@@ -30,7 +30,6 @@ namespace SoundPoolCompat {
             Uri,
         };
         enum DecodingState {
-            None,
             DecodingNow,
             Completed
         };
@@ -39,13 +38,13 @@ namespace SoundPoolCompat {
         AudioSource();
     public:
         ~AudioSource();
-        std::shared_ptr<PCMBuffer> getPCMBuffer(size_t idx);
-        std::shared_ptr<PCMBuffer> addEmptyPCMBuffer(int size);
+        std::shared_ptr<DataBuffer> getPCMBuffer(int idx);
+        std::shared_ptr<DataBuffer> addEmptyPCMBuffer(int size);
         void closeFD();
 
 
         AudioSourceType _type;
-        std::vector<std::shared_ptr<PCMBuffer> > _pcm_nativeBuffers;
+        std::vector<std::shared_ptr<DataBuffer> > _pcm_nativeBuffers;
         int _pcm_numChannels;
         int _pcm_samplingRate;
         int _pcm_bitPerSample;

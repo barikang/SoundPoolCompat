@@ -6,6 +6,7 @@
 #include <queue>
 
 #define MAX_AUDIOPLAYER_COUNT   (28)
+#define ALL_STREAM_GROUP_ID     (0)
 #define  CLASS_NAME "kr/co/smartstudy/soundpoolcompat/AudioEngine"
 
 //
@@ -164,14 +165,18 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
             AudioTask task = priorAudioTaskQueue.top();
             priorAudioTaskQueue.pop();
 
-            if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI)
+            //LOGD("Task : %d %d %d",task.taskType,task.audioID,task.streamID);
+
+            if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYCOMPLETE ||
+                    task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYERROR)
             {
+                const bool isError = task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYERROR;
                 auto pAudioPlayer = pAudioEngine->getAudioPlayer(task.streamID);
                 if(pAudioPlayer)
                 {
-                    pAudioPlayer->_repeatCount--;
                     bool doStop = true;
-                    if(pAudioPlayer->_isForDecoding == false) {
+                    if(pAudioPlayer->isForDecoding() == false) {
+                        pAudioPlayer->_repeatCount--;
                         if (pAudioPlayer->_repeatCount != 0) {
                             do {
                                 if (!pAudioPlayer->play())
@@ -184,33 +189,51 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
                     if(doStop)
                     {
-                        pAudioEngine->onPlayComplete(task.streamID);
+                        if(pAudioPlayer->isForDecoding()) {
+                            auto pAudioSrc = pAudioPlayer->_pAudioSrc;
+                            pAudioSrc->_type = AudioSource::AudioSourceType::PCM;
+                            pAudioPlayer->fillOutPCMInfo();
+                            pAudioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
+                            pAudioSrc->closeFD();
+                        }
+
+                        pAudioEngine->stop(task.streamID);
+
+                        if(pAudioPlayer->isForDecoding()) {
+                            JNIEnv *env = getJNIEnv();
+                            env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID,
+                                                      task.streamGroupID,task.streamID,0);
+                            gJavaVM->DetachCurrentThread();
+
+                        }
                     }
 
                 }
             }
             else if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE)
             {
+                auto pPlayer = pAudioEngine->getAudioPlayer(task.streamID);
                 auto pAudioSrc = AudioSource::getSharedPtrAudioSource(task.audioID);
-                if(pAudioSrc == nullptr)
+
+                if(pPlayer == nullptr || pAudioSrc == nullptr)
                     continue;
 
-                AudioSource::DecodingState expectedState = AudioSource::DecodingState::None;
-                if(!pAudioSrc->_decodingState.compare_exchange_weak(expectedState,AudioSource::DecodingState::DecodingNow))
+                if(pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
+                    continue;
+
+                AudioSource::DecodingState expectedState = AudioSource::DecodingState::Completed;
+                if(!pAudioSrc->_decodingState.compare_exchange_strong(expectedState,AudioSource::DecodingState::DecodingNow))
                     continue;
 
                 pAudioSrc->_pcm_nativeBuffers.clear();
 
-                const int newStreamID = pAudioEngine->_currentAudioStreamID.fetch_add(1);
-
-                std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(pAudioEngine));
-                SLresult  resultInitPlayer = false;
-                resultInitPlayer = pPlayer->initForDecoding(newStreamID,pAudioEngine->_engineEngine,pAudioSrc,task.streamGroupID);
+                SLresult resultInitPlayer = pPlayer->initForDecoding(pAudioSrc);
 
                 // Try it next;
                 if(resultInitPlayer == SL_RESULT_MEMORY_FAILURE)
                 {
-                    pAudioSrc->_decodingState.store(AudioSource::DecodingState::None);
+                    pAudioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
+                    //pAudioEngine->decodeAudio(pAudioSrc->_audioID,pPlayer->_streamGroupID);
                     priorAudioTaskQueue.push(task);
                     break;
                 }
@@ -219,15 +242,30 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
                     LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
                     continue;
                 }
-                pAudioEngine->_recurMutex.lock();
-                pAudioEngine->_audioPlayers[newStreamID] = pPlayer;
-                pAudioEngine->_recurMutex.unlock();
 
-                pPlayer->enqueueBuffer();
-                pPlayer->enqueueBuffer();
                 pPlayer->play();
+            }
+            else if(task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAY)
+            {
+                auto pPlayer = pAudioEngine->getAudioPlayer(task.streamID);
+                auto pAudioSrc = AudioSource::getSharedPtrAudioSource(task.audioID);
 
+                if(pPlayer == nullptr || pAudioSrc == nullptr)
+                    continue;
 
+                if(pAudioSrc->_decodingState.load() != AudioSource::DecodingState::Completed)
+                    continue;
+
+                SLresult resultInitPlayer = pPlayer->initForPlay(pAudioSrc);
+                if (resultInitPlayer != SL_RESULT_SUCCESS){
+                    LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
+                    continue;
+                }
+
+                pPlayer->setVolume(pPlayer->_volume);
+                pPlayer->setPlayRate(pPlayer->_playRate);
+
+                pPlayer->play();
 
             }
 
@@ -236,8 +274,7 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
         }
     }
 
-    JNIEnv *env = getJNIEnv();
-    gJavaVM->DetachCurrentThread();
+
 
     LOGD("AudioEngine worker thread is finished");
 }
@@ -340,26 +377,14 @@ bool AudioEngine::init()
 int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate)
 {
     int streamID = -1;
-
     do
     {
         if (_engineEngine == nullptr)
             break;
 
-        auto pAudioSrc = AudioSource::getSharedPtrAudioSource(audioID);
-        auto decodingState = pAudioSrc->_decodingState.load();
-        if(pAudioSrc == nullptr || decodingState == AudioSource::DecodingState::DecodingNow)
-            break;
-
         streamID = _currentAudioStreamID.fetch_add(1);
 
-        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this));
-        SLresult resultInitPlayer = pPlayer->initForPlay(streamID,_engineEngine, _outputMixObject,pAudioSrc,androidStreamType,streamGroupID);
-        if (resultInitPlayer != SL_RESULT_SUCCESS){
-            LOGE( "%s,%d message:create player fail : %x", __func__, __LINE__,resultInitPlayer);
-            streamID = -1;
-            break;
-        }
+        std::shared_ptr<AudioPlayer> pPlayer(new AudioPlayer(this,streamID,streamGroupID));
         _recurMutex.lock();
         _audioPlayers[streamID] = pPlayer;
         _recurMutex.unlock();
@@ -370,7 +395,11 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         pPlayer->setVolume(volume);
         pPlayer->setPlayRate(playRate);
         pPlayer->setRepeatCount(repeatCount);
-        pPlayer->play();
+        pPlayer->setAndroidStreamType(androidStreamType);
+
+        AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAY,audioID,streamID,streamGroupID);
+        enqueueTask(task);
+
 
 
     } while (0);
@@ -381,9 +410,23 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
 
 int AudioEngine::decodeAudio(int audioID,int streamGroupID)
 {
-    AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE,audioID,-1,streamGroupID);
-    enqueueTask(task);
-    return 0;
+    int streamID = -1;
+    do {
+        if (_engineEngine == nullptr)
+            break;
+
+        streamID = _currentAudioStreamID.fetch_add(1);
+
+        std::shared_ptr <AudioPlayer> pPlayer(new AudioPlayer(this, streamID,streamGroupID));
+        _recurMutex.lock();
+        _audioPlayers[streamID] = pPlayer;
+        _recurMutex.unlock();
+
+        AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE, audioID, streamID, streamGroupID);
+        enqueueTask(task);
+    } while(0);
+
+    return streamID;
 }
 
 
@@ -419,21 +462,22 @@ void AudioEngine::stop(int streamID)
 float AudioEngine::getCurrentTime(int streamID)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
-    SLmillisecond currPos;
     auto pPlayer = getAudioPlayer(streamID);
     if(pPlayer) {
-        (*pPlayer->_fdPlayerPlay)->GetPosition(pPlayer->_fdPlayerPlay, &currPos);
-        return currPos / 1000.0f;
+        return pPlayer->getCurrentTime();
     }
+    return -1.0f;
 
 }
 
-void AudioEngine::stopAll(int streamGroupID,bool wait)
+void AudioEngine::stopAll(int streamGroupID,bool includeDecoding)
 {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); ) {
         auto pPlayer = iter->second;
-        if (streamGroupID == 0 || pPlayer->_streamGroupID == streamGroupID) {
+        if ((streamGroupID == ALL_STREAM_GROUP_ID || pPlayer->_streamGroupID == streamGroupID) &&
+        (includeDecoding || pPlayer->isForDecoding() == false ))
+        {
             pPlayer->stop();
             iter = _audioPlayers.erase(iter);
             continue;
@@ -447,7 +491,9 @@ void AudioEngine::pauseAll(int streamGroupID) {
     std::lock_guard<std::recursive_mutex> guard(_recurMutex);
     for(auto iter = _audioPlayers.begin() ; iter != _audioPlayers.end(); iter++) {
         auto pPlayer = iter->second;
-        if (pPlayer->_streamGroupID == streamGroupID) {
+        if ((streamGroupID == ALL_STREAM_GROUP_ID || pPlayer->_streamGroupID == streamGroupID)
+            && pPlayer->isForDecoding() == false)
+        {
             pPlayer->pause();
         }
     }
@@ -494,38 +540,6 @@ void AudioEngine::setRepeatCount(int streamID,int repeatCount)
 
 ////////////////////////////////////////////////////
 
-
-void AudioEngine::onPlayComplete(int streamID)
-{
-
-    auto pPlayer = getAudioPlayer(streamID);
-    if(pPlayer) {
-        if(pPlayer->_isForDecoding) {
-            auto pAudioSrc = pPlayer->_audioSrc;
-            pAudioSrc->_type = AudioSource::AudioSourceType::PCM;
-            pPlayer->fillOutPCMInfo();
-            pAudioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
-            pAudioSrc->closeFD();
-        }
-
-        {
-            std::lock_guard <std::recursive_mutex> guard(_recurMutex);
-            pPlayer->stop();
-            _audioPlayers.erase(streamID);
-        }
-
-        if(pPlayer->_isForDecoding) {
-            JNIEnv *env = getJNIEnv();
-            env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID, pPlayer->_streamGroupID,pPlayer->_streamID,0);
-            JavaVM *jvm = gJavaVM;
-            //jvm->DetachCurrentThread();
-
-        }
-
-    }
-
-
-}
 
 
 

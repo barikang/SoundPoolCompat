@@ -50,7 +50,7 @@ public class MainActivity extends AppCompatActivity {
                         synchronized (startTimes) {
                             if (startTimes.indexOfKey(sampleId) >= 0) {
                                 long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
-                                Log.d(TAG, String.format("load complete %d %d [%dms]", sampleId, status, loadingTime));
+                                Log.d(TAG, String.format("load complete %d %d [%dms] [%d/%d]", sampleId, status, loadingTime,(loadCnt-_count.get()+1),loadCnt));
                             }
                         }
 

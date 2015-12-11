@@ -11,8 +11,10 @@
 
 namespace SoundPoolCompat {
 
-#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI         (1)
-#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE                    (2)
+#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYCOMPLETE         (1)
+#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYERROR            (2)
+#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_DECODE                    (3)
+#define SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAY                      (4)
 
     struct AudioTask
     {
@@ -20,7 +22,16 @@ namespace SoundPoolCompat {
         int audioID = -1;
         int streamID = -1;
         int streamGroupID = -1;
+
         AudioTask() {};
+        AudioTask(int _taskType,AudioPlayer* pPlayer) :
+                taskType(_taskType)
+                ,streamID(pPlayer->_streamID)
+        ,streamGroupID(pPlayer->_streamGroupID)
+        {
+            if(pPlayer->_pAudioSrc)
+                audioID = pPlayer->_pAudioSrc->_audioID;
+        };
         AudioTask(int _taskType,int _audioID,int _streamID,int _streamGroupID) :
                 taskType(_taskType),audioID(_audioID),streamID(_streamID),streamGroupID(_streamGroupID)
         {};
@@ -54,7 +65,7 @@ namespace SoundPoolCompat {
         void resumeAll(int streamGroupID);
         void stop(int streamID);
         float getCurrentTime(int streamID);
-        void stopAll(int streamGroupID,bool wait);
+        void stopAll(int streamGroupID,bool includeDecoding);
 
         void setVolume(int streamID,float volume);
         void setPlayRate(int streamID,float playRate);
@@ -63,8 +74,6 @@ namespace SoundPoolCompat {
         void enqueueTask(const AudioTask& task);
     private:
         std::shared_ptr<AudioPlayer>  getAudioPlayer(int streamID);
-
-        void onPlayComplete(int streamID);
 
         bool init();
         static void threadFunc(AudioEngine* audioEngine);

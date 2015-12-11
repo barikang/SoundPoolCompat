@@ -31,7 +31,7 @@ void AudioPlayer::callback_PlayerPlay(SLPlayItf caller, void* context, SLuint32 
             LOGD("[%d] callback playevent : end", pAudioPlayer->_streamID);
             auto pEngine = AudioEngine::getInstance();
             if (pEngine) {
-                AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI,-1,pAudioPlayer->_streamID,-1);
+                AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYCOMPLETE,pAudioPlayer);
                 pEngine->enqueueTask(task);
             }
 
@@ -56,7 +56,7 @@ void AudioPlayer::callback_PrefetchStatus(SLPrefetchStatusItf caller,void *conte
             LOGD("Prefetch error! StreamID = %d",pAudioPlayer->_streamID);
             auto pEngine = AudioEngine::getInstance();
             if (pEngine) {
-                AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYFINISHEDNOTI,-1,pAudioPlayer->_streamID,-1);
+                AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYERROR,pAudioPlayer);
                 pEngine->enqueueTask(task);
             }
         }
@@ -65,41 +65,44 @@ void AudioPlayer::callback_PrefetchStatus(SLPrefetchStatusItf caller,void *conte
 }
 
 
-AudioPlayer::AudioPlayer(AudioEngine *pAudioEngine)
-        : _fdPlayerObject(nullptr)
+AudioPlayer::AudioPlayer(AudioEngine *pAudioEngine,int streamID,int streamGroupID)
+        : _pAudioEngine(pAudioEngine)
+        ,_streamID(streamID)
+        ,_streamGroupID(streamGroupID)
+        , _pAudioSrc(nullptr)
+
+        , _itf_playerObject(nullptr)
         , _playOver(false)
         , _repeatCount(1)
-        , _streamID(0)
-        , _stoppedTime(0.0f)
         , _currentBufIndex(0)
         , _dupFD(0)
-        , _pAudioEngine(pAudioEngine)
         , _isForDecoding(false)
+        , _inited(false)
 
-        ,_fdPlayerPlay(nullptr)
-        ,_fdPlayerVolume(nullptr)
-        ,_fdPlayerBufferQueue(nullptr)
-        ,_fdPlayerPrefetchStatus(nullptr)
-        ,_fdPlayerConfig(nullptr)
-        ,_fdPlayerPlayRate(nullptr)
-        ,_fdPlayerMetaExtract(nullptr)
+        , _itf_play(nullptr)
+        , _itf_volume(nullptr)
+        , _itf_bufferQueue(nullptr)
+        , _itf_prefetchStatus(nullptr)
+        , _itf_androidConfiguration(nullptr)
+        , _itf_playerackRate(nullptr)
+        , _itf_metadataExtraction(nullptr)
 {
 }
 
 AudioPlayer::~AudioPlayer()
 {
 
-    if (_fdPlayerObject)
+    if (_itf_playerObject)
     {
-        (*_fdPlayerObject)->Destroy(_fdPlayerObject);
-        _fdPlayerObject = nullptr;
-        _fdPlayerPlay = nullptr;
-        _fdPlayerVolume = nullptr;
-        _fdPlayerBufferQueue = nullptr;
-        _fdPlayerPrefetchStatus = nullptr;
-        _fdPlayerConfig = nullptr;
-        _fdPlayerPlayRate = nullptr;
-        _fdPlayerMetaExtract = nullptr;
+        (*_itf_playerObject)->Destroy(_itf_playerObject);
+        _itf_playerObject = nullptr;
+        _itf_play = nullptr;
+        _itf_volume = nullptr;
+        _itf_bufferQueue = nullptr;
+        _itf_prefetchStatus = nullptr;
+        _itf_androidConfiguration = nullptr;
+        _itf_playerackRate = nullptr;
+        _itf_metadataExtraction = nullptr;
     }
 
     if(_dupFD > 0)
@@ -109,19 +112,14 @@ AudioPlayer::~AudioPlayer()
     LOGD("[%d] AudioPlayer destoryed",_streamID);
 }
 
-SLresult AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjectItf outputMixObject,
-                              std::shared_ptr<AudioSource> pAudioSrc,
-                              SLint32 androidStreamType,int streamGroupID)
+SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
 {
-    //LOGD("[%d] Player Init : ",streamID);
+    const SLEngineItf engineEngine = _pAudioEngine->_engineEngine;
+    const SLObjectItf outputMixObject = _pAudioEngine->_outputMixObject;
     SLresult result = SL_RESULT_UNKNOWN_ERROR;
-    _streamID = streamID;
-    _streamGroupID = streamGroupID;
     _isForDecoding = false;
-    _audioSrc = pAudioSrc;
 
     do {
-
 
         SLDataSource audioSrc;
         SLDataLocator_AndroidSimpleBufferQueue loc_bufq;
@@ -132,36 +130,37 @@ SLresult AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjec
 
         bool useBufferQueue = false;
 
-        if (_audioSrc->_type == AudioSource::AudioSourceType::PCM)
+        if (pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
         {
             useBufferQueue = true;
 
-            const SLuint32 bitPerSample = _audioSrc->_pcm_bitPerSample;
-            const SLuint32 samplingRate = _audioSrc->_pcm_samplingRate;
-            const SLuint32 numChannels = _audioSrc->_pcm_numChannels;
-            const SLuint32 containerSize = _audioSrc->_pcm_containerSize;
-            const SLuint32 byteOrder = _audioSrc->_pcm_byteOrder;
+            const SLuint32 bitPerSample = pAudioSrc->_pcm_bitPerSample;
+            const SLuint32 samplingRate = pAudioSrc->_pcm_samplingRate;
+            const SLuint32 numChannels = pAudioSrc->_pcm_numChannels;
+            const SLuint32 containerSize = pAudioSrc->_pcm_containerSize;
+            const SLuint32 byteOrder = pAudioSrc->_pcm_byteOrder;
 
             const SLuint32 speaker = numChannels == 1 ? SL_SPEAKER_FRONT_CENTER : (SL_SPEAKER_FRONT_LEFT|SL_SPEAKER_FRONT_RIGHT);
 
             loc_bufq = { SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2};
             format_pcm = {SL_DATAFORMAT_PCM, numChannels,
-                           (samplingRate * 1000),
-                           bitPerSample, containerSize,
+                          (samplingRate * 1000),
+                          bitPerSample, containerSize,
                           speaker, byteOrder};
 
             audioSrc = {&loc_bufq, &format_pcm};
         }
-        else if (_audioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
-
-            _dupFD = dup(_audioSrc->_fd);
-            loc_fd = {SL_DATALOCATOR_ANDROIDFD, _dupFD,(SLAint64)_audioSrc->_fd_offset,(SLAint64)_audioSrc->_fd_length};
+        else if (pAudioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
+            if(_dupFD > 0)
+                close(_dupFD);
+            _dupFD = dup(pAudioSrc->_fd);
+            loc_fd = {SL_DATALOCATOR_ANDROIDFD, _dupFD,(SLAint64) pAudioSrc->_fd_offset,(SLAint64) pAudioSrc->_fd_length};
             format_mime = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
 
             audioSrc = { &loc_fd,&format_mime };
         }
-        else if (_audioSrc->_type == AudioSource::AudioSourceType::Uri) {
-            loc_uri = {SL_DATALOCATOR_URI , (SLchar*)_audioSrc->_uri_path.c_str()};
+        else if (pAudioSrc->_type == AudioSource::AudioSourceType::Uri) {
+            loc_uri = {SL_DATALOCATOR_URI , (SLchar*) pAudioSrc->_uri_path.c_str()};
             format_mime = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
             audioSrc = { &loc_uri,&format_mime};
         }
@@ -191,94 +190,88 @@ SLresult AudioPlayer::initForPlay(int streamID,SLEngineItf engineEngine, SLObjec
                 ,SL_BOOLEAN_TRUE
         };
 
-        result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
-                                                         &audioSrc, &audioSnk, useBufferQueue ? 5 : 6, ids, req);
+        result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_itf_playerObject,
+                                                    &audioSrc, &audioSnk, useBufferQueue ? 5 : 6, ids, req);
         if (SL_RESULT_SUCCESS != result) {
             //LOGE("create audio player fail");
             break;
         }
 
         // set configuration before realize
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDCONFIGURATION,
-                                                  &_fdPlayerConfig);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_ANDROIDCONFIGURATION,
+                                                    &_itf_androidConfiguration);
         if (SL_RESULT_SUCCESS != result) { LOGE("get the config interface fail"); break; };
-        result = (*_fdPlayerConfig)->SetConfiguration(_fdPlayerConfig, SL_ANDROID_KEY_STREAM_TYPE,
-                                                      &androidStreamType, sizeof(SLint32));
+        result = (*_itf_androidConfiguration)->SetConfiguration(_itf_androidConfiguration, SL_ANDROID_KEY_STREAM_TYPE,
+                                                                &_androidStreamType, sizeof(SLint32));
 
         // realize the player
-        result = (*_fdPlayerObject)->Realize(_fdPlayerObject, SL_BOOLEAN_FALSE);
+        result = (*_itf_playerObject)->Realize(_itf_playerObject, SL_BOOLEAN_FALSE);
         if (SL_RESULT_SUCCESS != result) { LOGE("realize the player fail"); break; }
 
         // get the play interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_PLAY, &_fdPlayerPlay);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_PLAY, &_itf_play);
         if (SL_RESULT_SUCCESS != result) { LOGE("get the play interface fail"); break; }
 
-        (*_fdPlayerPlay)->SetCallbackEventsMask(_fdPlayerPlay, SL_PLAYEVENT_HEADATEND);
-        result = (*_fdPlayerPlay)->RegisterCallback(_fdPlayerPlay, AudioPlayer::callback_PlayerPlay,
-                                                    this);
+        (*_itf_play)->SetCallbackEventsMask(_itf_play, SL_PLAYEVENT_HEADATEND);
+        result = (*_itf_play)->RegisterCallback(_itf_play, AudioPlayer::callback_PlayerPlay,
+                                                this);
         if (SL_RESULT_SUCCESS != result) { LOGE("register play callback fail");break; }
 
 
         if (useBufferQueue)
         {
             // get the bufferqueue interface
-            result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
-                                                      &_fdPlayerBufferQueue);
+            result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
+                                                        &_itf_bufferQueue);
             if (SL_RESULT_SUCCESS != result) {LOGE("get the bufferqueue interface fail");break; };
 
             // register callback on the buffer queue
-            result = (*_fdPlayerBufferQueue)->RegisterCallback(_fdPlayerBufferQueue, AudioPlayer::callback_SimpleBufferQueue,this);
+            result = (*_itf_bufferQueue)->RegisterCallback(_itf_bufferQueue, AudioPlayer::callback_SimpleBufferQueue,this);
             if(SL_RESULT_SUCCESS != result){ LOGE("register buffer queue callback fail"); break; }
 
         }
         else
         {
-            result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject,SL_IID_PREFETCHSTATUS,&_fdPlayerPrefetchStatus);
+            result = (*_itf_playerObject)->GetInterface(_itf_playerObject,SL_IID_PREFETCHSTATUS,&_itf_prefetchStatus);
             if (SL_RESULT_SUCCESS != result) {LOGE("get the prefetch interface fail");break; };
 
-            result = (*_fdPlayerPrefetchStatus)->SetCallbackEventsMask(_fdPlayerPrefetchStatus,SL_PREFETCHEVENT_STATUSCHANGE|SL_PREFETCHEVENT_FILLLEVELCHANGE);
+            result = (*_itf_prefetchStatus)->SetCallbackEventsMask(_itf_prefetchStatus,SL_PREFETCHEVENT_STATUSCHANGE|SL_PREFETCHEVENT_FILLLEVELCHANGE);
             if (SL_RESULT_SUCCESS != result) {LOGE("set prefetch callback event mask fail");break; };
-            result = (*_fdPlayerPrefetchStatus)->SetFillUpdatePeriod(_fdPlayerPrefetchStatus,50);
+            result = (*_itf_prefetchStatus)->SetFillUpdatePeriod(_itf_prefetchStatus,50);
             if (SL_RESULT_SUCCESS != result) {LOGE("set fillupdateperiod fail");break; };
-            result = (*_fdPlayerPrefetchStatus)->RegisterCallback(_fdPlayerPrefetchStatus,AudioPlayer::callback_PrefetchStatus , this );
+            result = (*_itf_prefetchStatus)->RegisterCallback(_itf_prefetchStatus,AudioPlayer::callback_PrefetchStatus , this );
             if (SL_RESULT_SUCCESS != result) {LOGE("register prefetch callback fail");break; };
 
         }
 
         // get the playbackrate interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_PLAYBACKRATE, &_fdPlayerPlayRate);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_PLAYBACKRATE, &_itf_playerackRate);
         if(SL_RESULT_SUCCESS != result){ LOGE("get the playbackrate interface fail"); break; }
 
         // get the volume interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_VOLUME, &_fdPlayerVolume);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_VOLUME, &_itf_volume);
         if(SL_RESULT_SUCCESS != result){ LOGE("get the volume interface fail"); break; }
 
-
-
+        _pAudioSrc = pAudioSrc;
         result = SL_RESULT_SUCCESS;
+        _inited = true;
     } while (0);
 
     return result;
 }
 
 
-SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
-                                  std::shared_ptr<AudioSource> pAudioSrc,
-                                  int streamGroupID)
+SLresult AudioPlayer::initForDecoding(const std::shared_ptr<AudioSource>& pAudioSrc)
 {
+    const SLEngineItf engineEngine = _pAudioEngine->_engineEngine;
+
     SLresult result = SL_RESULT_UNKNOWN_ERROR;
-    _streamID = streamID;
-    _streamGroupID = streamGroupID;
     _isForDecoding = true;
-    _audioSrc = pAudioSrc;
+
 
     do {
-
-
-        if(_audioSrc->_type == AudioSource::AudioSourceType::PCM)
+        if(pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
         {
-            LOGE("PCM source is not available for decoding");
-            assert(0);
             break;
         }
 
@@ -296,15 +289,16 @@ SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
         // configure audio sink
         SLDataSink audioSnk = {&loc_bufq, &format_pcm};
 
-        if (_audioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
-
-            _dupFD = dup(_audioSrc->_fd);
-            loc_fd = {SL_DATALOCATOR_ANDROIDFD, _dupFD,(SLAint64)_audioSrc->_fd_offset,(SLAint64)_audioSrc->_fd_length};
+        if (pAudioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
+            if(_dupFD > 0)
+                close(_dupFD);
+            _dupFD = dup(pAudioSrc->_fd);
+            loc_fd = {SL_DATALOCATOR_ANDROIDFD, _dupFD,(SLAint64) pAudioSrc->_fd_offset,(SLAint64) pAudioSrc->_fd_length};
             format_mime = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
             audioSrc = { &loc_fd,&format_mime };
         }
-        else if (_audioSrc->_type == AudioSource::AudioSourceType::Uri) {
-            loc_uri = {SL_DATALOCATOR_URI , (SLchar*)_audioSrc->_uri_path.c_str()};
+        else if (pAudioSrc->_type == AudioSource::AudioSourceType::Uri) {
+            loc_uri = {SL_DATALOCATOR_URI , (SLchar*) pAudioSrc->_uri_path.c_str()};
             format_mime = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
             audioSrc = { &loc_uri,&format_mime};
         }
@@ -327,52 +321,52 @@ SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
                 ,SL_BOOLEAN_TRUE
         };
 
-        result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_fdPlayerObject,
-                                                         &audioSrc, &audioSnk, 4, ids, req);
+        result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_itf_playerObject,
+                                                    &audioSrc, &audioSnk, 4, ids, req);
         if (SL_RESULT_SUCCESS != result) {
             LOGE("create audio player fail");
             break;
         }
 
         // realize the player
-        result = (*_fdPlayerObject)->Realize(_fdPlayerObject, SL_BOOLEAN_FALSE);
+        result = (*_itf_playerObject)->Realize(_itf_playerObject, SL_BOOLEAN_FALSE);
         if (SL_RESULT_SUCCESS != result) { LOGE("realize the player fail"); break; }
 
         // get the play interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_PLAY, &_fdPlayerPlay);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_PLAY, &_itf_play);
         if (SL_RESULT_SUCCESS != result) { LOGE("get the play interface fail"); break; }
 
-        (*_fdPlayerPlay)->SetCallbackEventsMask(_fdPlayerPlay, SL_PLAYEVENT_HEADATEND);
-        result = (*_fdPlayerPlay)->RegisterCallback(_fdPlayerPlay, AudioPlayer::callback_PlayerPlay,
-                                                    this);
+        (*_itf_play)->SetCallbackEventsMask(_itf_play, SL_PLAYEVENT_HEADATEND);
+        result = (*_itf_play)->RegisterCallback(_itf_play, AudioPlayer::callback_PlayerPlay,
+                                                this);
         if (SL_RESULT_SUCCESS != result) { LOGE("register play callback fail");break; }
 
         // get the bufferqueue interface
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
-                                                  &_fdPlayerBufferQueue);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_ANDROIDSIMPLEBUFFERQUEUE,
+                                                    &_itf_bufferQueue);
         if (SL_RESULT_SUCCESS != result) {LOGE("get the bufferqueue interface fail");break; };
 
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject, SL_IID_METADATAEXTRACTION,
-                                                  &_fdPlayerMetaExtract);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject, SL_IID_METADATAEXTRACTION,
+                                                    &_itf_metadataExtraction);
         if (SL_RESULT_SUCCESS != result) {LOGE("get the metadataextraction interface fail");break; };
 
         // register callback on the buffer queue
-        result = (*_fdPlayerBufferQueue)->RegisterCallback(_fdPlayerBufferQueue, AudioPlayer::callback_SimpleBufferQueue,this);
+        result = (*_itf_bufferQueue)->RegisterCallback(_itf_bufferQueue, AudioPlayer::callback_SimpleBufferQueue,this);
         if(SL_RESULT_SUCCESS != result){ LOGE("register buffer queue callback fail"); break; }
 
-        result = (*_fdPlayerObject)->GetInterface(_fdPlayerObject,SL_IID_PREFETCHSTATUS,&_fdPlayerPrefetchStatus);
+        result = (*_itf_playerObject)->GetInterface(_itf_playerObject,SL_IID_PREFETCHSTATUS,&_itf_prefetchStatus);
         if (SL_RESULT_SUCCESS != result) {LOGE("get the prefetch interface fail");break; };
 
-        result = (*_fdPlayerPrefetchStatus)->SetCallbackEventsMask(_fdPlayerPrefetchStatus,SL_PREFETCHEVENT_STATUSCHANGE|SL_PREFETCHEVENT_FILLLEVELCHANGE);
+        result = (*_itf_prefetchStatus)->SetCallbackEventsMask(_itf_prefetchStatus,SL_PREFETCHEVENT_STATUSCHANGE|SL_PREFETCHEVENT_FILLLEVELCHANGE);
         if (SL_RESULT_SUCCESS != result) {LOGE("set prefetch callback event mask fail");break; };
-        result = (*_fdPlayerPrefetchStatus)->SetFillUpdatePeriod(_fdPlayerPrefetchStatus,50);
+        result = (*_itf_prefetchStatus)->SetFillUpdatePeriod(_itf_prefetchStatus,50);
         if (SL_RESULT_SUCCESS != result) {LOGE("set fillupdateperiod fail");break; };
-        result = (*_fdPlayerPrefetchStatus)->RegisterCallback(_fdPlayerPrefetchStatus,AudioPlayer::callback_PrefetchStatus , this );
+        result = (*_itf_prefetchStatus)->RegisterCallback(_itf_prefetchStatus,AudioPlayer::callback_PrefetchStatus , this );
         if (SL_RESULT_SUCCESS != result) {LOGE("register prefetch callback fail");break; };
 
         ///////////////////////
         SLuint32 itemCount;
-        result = (*_fdPlayerMetaExtract)->GetItemCount(_fdPlayerMetaExtract, &itemCount);
+        result = (*_itf_metadataExtraction)->GetItemCount(_itf_metadataExtraction, &itemCount);
         if(SL_RESULT_SUCCESS != result){ LOGE("get meta item count fail"); break; }
 
         SLuint32 keySize, valueSize;
@@ -380,13 +374,13 @@ SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
         for(int i=0 ; i<itemCount ; i++) {
             keyInfo = NULL; keySize = 0;
             value = NULL;   valueSize = 0;
-            result = (*_fdPlayerMetaExtract)->GetKeySize(_fdPlayerMetaExtract, i, &keySize);
+            result = (*_itf_metadataExtraction)->GetKeySize(_itf_metadataExtraction, i, &keySize);
             if(SL_RESULT_SUCCESS != result){ LOGE("getKeySize error"); return false; };
-            result = (*_fdPlayerMetaExtract)->GetValueSize(_fdPlayerMetaExtract, i, &valueSize);
+            result = (*_itf_metadataExtraction)->GetValueSize(_itf_metadataExtraction, i, &valueSize);
             if(SL_RESULT_SUCCESS != result){ LOGE("getValueSize error"); return false; };
             keyInfo = (SLMetadataInfo*) malloc(keySize);
             if (NULL != keyInfo) {
-                result = (*_fdPlayerMetaExtract)->GetKey(_fdPlayerMetaExtract, i, keySize, keyInfo);
+                result = (*_itf_metadataExtraction)->GetKey(_itf_metadataExtraction, i, keySize, keyInfo);
                 if(SL_RESULT_SUCCESS != result){ LOGE("GetKey error"); return false; };
 
                 /*
@@ -395,25 +389,25 @@ SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
                      keyInfo->langCountry);
                 */
                 if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_NUMCHANNELS)) {
-                    _channelCountKeyIndex = i;
+                    _keyIdx_ChannelCount = i;
                 } else if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_SAMPLERATE)) {
-                    _sampleRateKeyIndex = i;
+                    _keyIdx_SampleRate = i;
                 } else if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_BITSPERSAMPLE)) {
-                    _bitsPerSampleKeyIndex = i;
+                    _keyIdx_BitsPerSample = i;
                 } else if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_CONTAINERSIZE)) {
-                    _containerSizeKeyIndex = i;
-                } else if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_CHANNELMASK)) {
-                    _channelMaskKeyIndex = i;
+                    _keyIdx_ContainerSize = i;
                 } else if (!strcmp((char*)keyInfo->data, ANDROID_KEY_PCMFORMAT_ENDIANNESS)) {
-                    _endiannessKeyIndex = i;
+                    _keyIdx_Endianness = i;
                 } else {
-                    LOGD("Unknown key %s ignored\n", (char *)keyInfo->data);
+                    //LOGD("Unknown key %s ignored\n", (char *)keyInfo->data);
                 }
                 free(keyInfo);
             }
         }
 
+        _pAudioSrc = pAudioSrc;
         result = SL_RESULT_SUCCESS;
+        _inited = true;
     } while (0);
 
     return result;
@@ -427,26 +421,23 @@ SLresult AudioPlayer::initForDecoding(int streamID,SLEngineItf engineEngine,
 
 
 bool AudioPlayer::enqueueBuffer() {
-    if (_playOver)
+    if (_playOver || !_inited)
         return false;
 
     bool ret = false;
-    if(_audioSrc != nullptr) {
+    if(_pAudioSrc != nullptr) {
         if (_isForDecoding == false  )
         {
-            if(_audioSrc->_type == AudioSource::AudioSourceType::PCM)
+            if(_pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
             {
-                if(_currentBufIndex < _audioSrc->_pcm_nativeBuffers.size())
-                {
-                    auto pBuffer = _audioSrc->getPCMBuffer(_currentBufIndex);
-                    if (pBuffer != nullptr) {
-                        _currentBufIndex++;
-                        SLresult result = (*_fdPlayerBufferQueue)->Enqueue(_fdPlayerBufferQueue, pBuffer->ptr,
-                                                                           pBuffer->size);
-                        ret = SL_RESULT_SUCCESS == result;
-                        if (SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u", (unsigned int) result); };
+                auto pBuffer = _pAudioSrc->getPCMBuffer(_currentBufIndex);
+                if (pBuffer != nullptr) {
+                    _currentBufIndex++;
+                    SLresult result = (*_itf_bufferQueue)->Enqueue(_itf_bufferQueue, pBuffer->ptr,
+                                                                   pBuffer->size);
+                    ret = SL_RESULT_SUCCESS == result;
+                    if (SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u", (unsigned int) result); };
 
-                    }
                 }
             }
             else{
@@ -455,10 +446,11 @@ bool AudioPlayer::enqueueBuffer() {
         }
         else if (_isForDecoding == true )
         {
-            auto pBuffer = _audioSrc->addEmptyPCMBuffer(EMPTY_BUFFER_SIZE);
-            SLresult result = (*_fdPlayerBufferQueue)->Enqueue(_fdPlayerBufferQueue, pBuffer->ptr,
-                                                               pBuffer->size);
+            auto pBuffer = _pAudioSrc->addEmptyPCMBuffer(EMPTY_BUFFER_SIZE);
+            SLresult result = (*_itf_bufferQueue)->Enqueue(_itf_bufferQueue, pBuffer->ptr,
+                                                           pBuffer->size);
             if (SL_RESULT_SUCCESS != result) { LOGE("Enqueue error : %u", (unsigned int) result); };
+            ret = (SL_RESULT_SUCCESS == result);
         }
     }
 
@@ -468,13 +460,13 @@ bool AudioPlayer::enqueueBuffer() {
 
 void AudioPlayer::resetBuffer()
 {
-    if(_playOver)
+    if (_playOver || !_inited)
         return;
 
-    if(_audioSrc != nullptr && _audioSrc->_type == AudioSource::AudioSourceType::PCM)
+    if(_pAudioSrc != nullptr && _pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
     {
         _currentBufIndex = 0;
-        auto result = (*_fdPlayerBufferQueue)->Clear(_fdPlayerBufferQueue);
+        auto result = (*_itf_bufferQueue)->Clear(_itf_bufferQueue);
         if(SL_RESULT_SUCCESS != result) { LOGE("Queue clear error : %u",(unsigned int)result); };
     }
 
@@ -483,7 +475,8 @@ void AudioPlayer::resetBuffer()
 
 void AudioPlayer::setVolume(float volume)
 {
-    if(_playOver)
+    _volume = volume;
+    if (_playOver || !_inited)
         return;
 
     if(volume < 0.0f )
@@ -495,21 +488,22 @@ void AudioPlayer::setVolume(float volume)
     if(dbVolume < SL_MILLIBEL_MIN){
         dbVolume = SL_MILLIBEL_MIN;
     }
-    if(_fdPlayerVolume) {
-        auto result = (*_fdPlayerVolume)->SetVolumeLevel(_fdPlayerVolume, dbVolume);
+    if(_itf_volume) {
+        auto result = (*_itf_volume)->SetVolumeLevel(_itf_volume, dbVolume);
         if(SL_RESULT_SUCCESS != result) { LOGE("[%d] setVolume error",_streamID); };
     }
 }
 
 void AudioPlayer::setPlayRate(float rate)
 {
-    if(_playOver)
+    _playRate = rate;
+    if (_playOver || !_inited)
         return;
 
-    if(_fdPlayerPlayRate)
+    if(_itf_playerackRate)
     {
         SLpermille playRate = (SLpermille)(rate*1000);
-        auto result = (*_fdPlayerPlayRate)->SetRate(_fdPlayerPlayRate,playRate);
+        auto result = (*_itf_playerackRate)->SetRate(_itf_playerackRate,playRate);
         if(SL_RESULT_SUCCESS != result) { LOGE("[%d] setRate error",_streamID); };
     }
 }
@@ -520,20 +514,23 @@ void AudioPlayer::setRepeatCount(int loop)
 
 }
 
+void AudioPlayer::setAndroidStreamType(SLint32 androidStreamType)
+{
+    _androidStreamType = androidStreamType;
+}
+
 bool AudioPlayer::play() {
-    if (_playOver)
+    if (_playOver || !_inited)
         return false;
 
     resetBuffer();
-    auto result = (*_fdPlayerPlay)->SetPlayState(_fdPlayerPlay, SL_PLAYSTATE_PLAYING);
+    if(!enqueueBuffer() || !enqueueBuffer())
+        return false;
+
+    auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_PLAYING);
     if (SL_RESULT_SUCCESS != result) {
         LOGE("SetPlayState play fail (play)");
         return false;
-    }
-
-    if (_isForDecoding == false) {
-        if (!enqueueBuffer())
-            return false;
     }
 
     return true;
@@ -541,10 +538,10 @@ bool AudioPlayer::play() {
 
 void AudioPlayer::pause()
 {
-    if(_playOver)
+    if (_playOver || !_inited)
         return;
 
-    auto result = (*_fdPlayerPlay)->SetPlayState(_fdPlayerPlay, SL_PLAYSTATE_PAUSED);
+    auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_PAUSED);
     if(SL_RESULT_SUCCESS != result){
         LOGE("SetPlayState pause fail (resume)");
     }
@@ -552,58 +549,70 @@ void AudioPlayer::pause()
 
 void AudioPlayer::resume()
 {
-    if(_playOver)
+    if (_playOver || !_inited)
         return;
 
-    auto result = (*_fdPlayerPlay)->SetPlayState(_fdPlayerPlay, SL_PLAYSTATE_PLAYING);
+    auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_PLAYING);
     if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState play fail (resume)"); };
 
 }
 
 void AudioPlayer::stop()
 {
-    if(_playOver)
+    if (_playOver || !_inited)
         return;
 
-    auto result = (*_fdPlayerPlay)->SetPlayState(_fdPlayerPlay, SL_PLAYSTATE_STOPPED);
+
+
+    auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_STOPPED);
     if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState stop fail "); };
     if(_isForDecoding) {
         AudioSource::DecodingState expectedState = AudioSource::DecodingState::DecodingNow;
-        if (_audioSrc->_decodingState.compare_exchange_weak(expectedState,
-                                                            AudioSource::DecodingState::None)) {
-            LOGD("%d AudioSource decoding stopped", _audioSrc->_audioID);
+        if (_pAudioSrc->_decodingState.compare_exchange_strong(expectedState,
+                                                             AudioSource::DecodingState::Completed)) {
+            LOGD("%d AudioSource decoding stopped", _pAudioSrc->_audioID);
 
         }
     }
-    _stoppedTime = AudioEngine::getCurrentTime();
     _playOver = true;
 }
 
 void AudioPlayer::fillOutPCMInfo()
 {
-    auto pAudioSrc = _audioSrc;
+    auto pAudioSrc = _pAudioSrc;
     union {
         SLMetadataInfo pcmMetaData;
         char withData[PCM_METADATA_VALUE_SIZE];
     } u;
-    auto res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _sampleRateKeyIndex,
-                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    auto res = (*_itf_metadataExtraction)->GetValue(_itf_metadataExtraction, _keyIdx_SampleRate,
+                                                    PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_samplingRate = *((SLuint32*)u.pcmMetaData.data);
 
-    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _channelCountKeyIndex,
-                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    res = (*_itf_metadataExtraction)->GetValue(_itf_metadataExtraction, _keyIdx_ChannelCount,
+                                               PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_numChannels = *((SLuint32*)u.pcmMetaData.data);
 
-    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _bitsPerSampleKeyIndex,
-                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    res = (*_itf_metadataExtraction)->GetValue(_itf_metadataExtraction, _keyIdx_BitsPerSample,
+                                               PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_bitPerSample = *((SLuint32*)u.pcmMetaData.data);
 
-    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _containerSizeKeyIndex,
-                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    res = (*_itf_metadataExtraction)->GetValue(_itf_metadataExtraction, _keyIdx_ContainerSize,
+                                               PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
 
     pAudioSrc->_pcm_containerSize = *((SLuint32*)u.pcmMetaData.data);
 
-    res = (*_fdPlayerMetaExtract)->GetValue(_fdPlayerMetaExtract, _endiannessKeyIndex,
-                                       PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
+    res = (*_itf_metadataExtraction)->GetValue(_itf_metadataExtraction, _keyIdx_Endianness,
+                                               PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_byteOrder = *((SLuint32*)u.pcmMetaData.data);
+}
+
+float AudioPlayer::getCurrentTime()
+{
+    if(_inited && _itf_play) {
+        SLmillisecond currPos;
+        (*_itf_play)->GetPosition(_itf_play, &currPos);
+        return currPos / 1000.0f;
+    }
+    return -1.0f;
+
 }
