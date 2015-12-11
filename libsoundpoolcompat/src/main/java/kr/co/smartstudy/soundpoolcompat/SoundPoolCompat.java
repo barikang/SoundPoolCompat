@@ -28,8 +28,8 @@ public class SoundPoolCompat {
 
     /**
      * Constructor. Constructs a SoundPool object.
-     * OS < LOLLIPOP : use original soundpool.
-     * OS >= LOLLIPOP : use OpenSL ES SoundPool.
+     * OS &lt; LOLLIPOP : use original soundpool.
+     * OS &gt;= LOLLIPOP : use OpenSL ES SoundPool.
      *
      * @param maxStreams the maximum number of simultaneous streams for this
      *                   SoundPool object
@@ -38,7 +38,7 @@ public class SoundPoolCompat {
      *                   {@link AudioManager#STREAM_MUSIC}.
      * @param srcQuality the sample-rate converter quality. Currently has no
      *                   effect. Use 0 for the default.
-     * @return a SoundPoolCompat object, or null if creation failed
+     *
      */
     public SoundPoolCompat(int maxStreams, int streamType, int srcQuality) {
         this(maxStreams,streamType,Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP,true);
@@ -54,8 +54,8 @@ public class SoundPoolCompat {
      *                   For example, game applications will normally use
      *                   {@link AudioManager#STREAM_MUSIC}.
      * @param useOpenSL use OpenSL ES AudioPool.
-     * @param tryPreDecode when using OpenSL ES, use predecoding.(available if >JELLYBEAN)
-     * @return a SoundPoolCompat object, or null if creation failed
+     * @param tryPreDecode when using OpenSL ES, use predecoding.(available since ICE_CREAM_SANDWICH)
+     *
      */
     public SoundPoolCompat(int maxStreams, int streamType,boolean useOpenSL,boolean tryPreDecode) {
         mLock = new Object();
