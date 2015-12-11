@@ -41,6 +41,7 @@ namespace SoundPoolCompat {
         std::shared_ptr<DataBuffer> getPCMBuffer(int idx);
         std::shared_ptr<DataBuffer> addEmptyPCMBuffer(int size);
         void closeFD();
+        void setPCMDuration(int durationMilli);
 
 
         AudioSourceType _type;
@@ -50,6 +51,7 @@ namespace SoundPoolCompat {
         int _pcm_bitPerSample;
         int _pcm_containerSize;
         int _pcm_byteOrder;
+        int _pcm_duration;
 
 
         int _fd;

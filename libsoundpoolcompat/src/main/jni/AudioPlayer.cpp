@@ -604,6 +604,18 @@ void AudioPlayer::fillOutPCMInfo()
     res = (*_itf_metadataExtraction)->GetValue(_itf_metadataExtraction, _keyIdx_Endianness,
                                                PCM_METADATA_VALUE_SIZE, &u.pcmMetaData);
     pAudioSrc->_pcm_byteOrder = *((SLuint32*)u.pcmMetaData.data);
+
+    if(_itf_play) {
+        SLmillisecond duration;
+        res = (*_itf_play)->GetDuration(_itf_play,&duration);
+        if(res == SL_RESULT_SUCCESS && duration > 0)
+        {
+            pAudioSrc->setPCMDuration(duration);
+
+        }
+    }
+
+
 }
 
 float AudioPlayer::getCurrentTime()

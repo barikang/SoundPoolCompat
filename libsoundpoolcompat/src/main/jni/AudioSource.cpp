@@ -48,7 +48,25 @@ std::shared_ptr<DataBuffer> AudioSource::addEmptyPCMBuffer(int size)
     _pcm_nativeBuffers.push_back(ret);
     return ret;
 }
+void AudioSource::setPCMDuration(int durationMilli)
+{
+    _pcm_duration = durationMilli;
+    if(_pcm_duration > 0) {
+        const int needSize = int(_pcm_samplingRate * _pcm_duration / 1000) * _pcm_containerSize *
+                             _pcm_numChannels / 8;
+        int bufSizeSum = 0;
+        for (size_t i = 0; i < _pcm_nativeBuffers.size(); i++) {
+            auto pBuffer = getPCMBuffer(i);
+            bufSizeSum += pBuffer->size;
+            if (bufSizeSum > needSize) {
+                pBuffer->size = pBuffer->size - (bufSizeSum - needSize);
+                _pcm_nativeBuffers.resize(i + 1);
+                break;
+            }
+        }
+    }
 
+}
 
 // statics...
 
@@ -124,6 +142,7 @@ AudioSource::AudioSource()
         ,_pcm_bitPerSample(0)
         ,_pcm_containerSize(0)
         ,_pcm_byteOrder(0)
+        ,_pcm_duration(-1)
         ,_fd(0)
         ,_fd_offset(0)
         ,_fd_length(0)
