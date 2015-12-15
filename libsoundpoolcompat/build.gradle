@@ -1,12 +1,16 @@
 import org.apache.tools.ant.taskdefs.condition.Os
 apply plugin: 'com.android.library'
+apply plugin: 'com.github.dcendents.android-maven'
+apply plugin: "com.jfrog.bintray"
 
+group = 'kr.co.smartstudy'
+version = '0.1.3'
 
 ext {
     bintrayRepo = 'maven'
     bintrayName = 'soundpool-compat'
 
-    publishedGroupId = 'kr.co.smartstudy'
+    publishedGroupId = group
     libraryName = 'SoundPoolCompat'
     artifact = 'soundpool-compat'
 
@@ -15,7 +19,7 @@ ext {
     siteUrl = 'https://github.com/barikang/SoundPoolCompat'
     gitUrl = 'https://github.com/barikang/SoundPoolCompat.git'
 
-    libraryVersion = '0.1.3'
+    libraryVersion = version
 
     developerId = 'barikang'
     developerName = 'Jaehun Ha'
@@ -35,7 +39,7 @@ android {
         minSdkVersion 8
         targetSdkVersion 23
         versionCode 1
-        versionName libraryVersion
+        versionName version
     }
     buildTypes {
         release {
@@ -103,5 +107,95 @@ task "cleanNative_${project.name}"(group: 'ndk') <<  {
     }
 }
 
-apply from: 'bintrayv1.gradle'
-apply from: 'installv1.gradle'
+def siteUrl = 'https://github.com/barikang/SoundPoolCompat'      // Homepage URL of the library
+def gitUrl = 'https://github.com/barikang/SoundPoolCompat.git'   // Git repository URL
+
+
+install {
+    repositories.mavenInstaller {
+        // This generates POM.xml with proper parameters
+        pom {
+            artifactId = artifact;
+            project {
+                packaging 'aar'
+
+                name 'Android SoundPool Compat Library'
+                description = ''
+
+                // Set your license
+                licenses {
+                    license {
+                        name 'The Apache Software License, Version 2.0'
+                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id 'barikang'
+                        name 'Jaehun Ha'
+                        email 'barikang@gmail.com'
+                    }
+                }
+                scm {
+                    connection gitUrl
+                    developerConnection gitUrl
+                    url siteUrl
+
+                }
+            }
+        }
+    }
+}
+
+task sourcesJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+    classifier = 'sources'
+}
+
+task javadoc(type: Javadoc) {
+    source = android.sourceSets.main.java.srcDirs
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+}
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier = 'javadoc'
+    from javadoc.destinationDir
+}
+artifacts {
+    archives javadocJar
+    archives sourcesJar
+}
+
+Properties properties = new Properties()
+properties.load(project.rootProject.file('local.properties').newDataInputStream())
+
+// https://github.com/bintray/gradle-bintray-plugin
+
+
+bintray {
+    user = properties.getProperty("bintray.user")
+    key = properties.getProperty("bintray.apikey")
+
+    configurations = ['archives']
+    pkg {
+        repo = "maven"
+        // it is the name that appears in bintray when logged
+        name = "soundpool-compat"
+        websiteUrl = siteUrl
+        vcsUrl = gitUrl
+        licenses = ["Apache-2.0"]
+        publish = true
+        version {
+            gpg {
+                sign = true //Determines whether to GPG sign the files. The default is false
+                passphrase = properties.getProperty("bintray.gpg.password") //Optional. The passphrase for GPG signing'
+            }
+//            mavenCentralSync {
+//                sync = true //Optional (true by default). Determines whether to sync the version to Maven Central.
+//                user = properties.getProperty("bintray.oss.user") //OSS user token
+//                password = properties.getProperty("bintray.oss.password") //OSS user password
+//                close = '1' //Optional property. By default the staging repository is closed and artifacts are released to Maven Central. You can optionally turn this behaviour off (by puting 0 as value) and release the version manually.
+//            }
+        }
+    }
+}

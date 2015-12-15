@@ -1,8 +1,6 @@
 //https://raw.githubusercontent.com/attwellBrian/JCenter/master/bintrayv1.gradle
 apply plugin: 'com.jfrog.bintray'
 
-version = libraryVersion
-
 task sourcesJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
     classifier = 'sources'
@@ -26,12 +24,12 @@ artifacts {
 Properties properties = new Properties()
 properties.load(project.rootProject.file('local.properties').newDataInputStream())
 
+
 bintray {
     user = properties.getProperty("bintray.user")
     key = properties.getProperty("bintray.apikey")
 
-    //configurations = ['deployables']
-    //configurations = ['archives']
+    configurations = ['archives']
     pkg {
         repo = bintrayRepo
         name = bintrayName
@@ -41,6 +39,7 @@ bintray {
         licenses = allLicenses
         publish = true
         publicDownloadNumbers = true
+
         version {
             desc = libraryDescription
             gpg {
