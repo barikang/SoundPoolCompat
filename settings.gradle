@@ -1,1 +1,2 @@
 include ':sample', ':libsoundpoolcompat'
+project(":libsoundpoolcompat").name = "soundpoolcompat"

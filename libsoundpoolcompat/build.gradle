@@ -6,30 +6,6 @@ apply plugin: "com.jfrog.bintray"
 group = 'kr.co.smartstudy'
 version = '0.1.3'
 
-ext {
-    bintrayRepo = 'maven'
-    bintrayName = 'soundpool-compat'
-
-    publishedGroupId = group
-    libraryName = 'SoundPoolCompat'
-    artifact = 'soundpool-compat'
-
-    libraryDescription = 'Android SoundPoolCompat Library using OpenSLES'
-
-    siteUrl = 'https://github.com/barikang/SoundPoolCompat'
-    gitUrl = 'https://github.com/barikang/SoundPoolCompat.git'
-
-    libraryVersion = version
-
-    developerId = 'barikang'
-    developerName = 'Jaehun Ha'
-    developerEmail = 'barikang@gmail.com'
-
-    licenseName = 'The MIT License (MIT)'
-    licenseUrl = 'http://opensource.org/licenses/mit-license.php'
-    allLicenses = ["MIT"]
-}
-
 
 android {
     compileSdkVersion 23
@@ -107,8 +83,30 @@ task "cleanNative_${project.name}"(group: 'ndk') <<  {
     }
 }
 
-def siteUrl = 'https://github.com/barikang/SoundPoolCompat'      // Homepage URL of the library
-def gitUrl = 'https://github.com/barikang/SoundPoolCompat.git'   // Git repository URL
+
+ext {
+    bintrayRepo = 'maven'
+    bintrayName = 'soundpoolcompat'
+
+    publishedGroupId = group
+    libraryName = 'SoundPoolCompat'
+    artifact = 'soundpoolcompat'
+
+    libraryDescription = 'Android SoundPoolCompat Library using OpenSLES'
+
+    siteUrl = 'https://github.com/barikang/SoundPoolCompat'
+    gitUrl = 'https://github.com/barikang/SoundPoolCompat.git'
+
+    libraryVersion = version
+
+    developerId = 'barikang'
+    developerName = 'Jaehun Ha'
+    developerEmail = 'barikang@gmail.com'
+
+    licenseName = 'The MIT License (MIT)'
+    licenseUrl = 'http://opensource.org/licenses/mit-license.php'
+    allLicenses = ["MIT"]
+}
 
 
 install {
@@ -118,22 +116,20 @@ install {
             artifactId = artifact;
             project {
                 packaging 'aar'
+                name libraryName
+                description = libraryDescription
 
-                name 'Android SoundPool Compat Library'
-                description = ''
-
-                // Set your license
                 licenses {
                     license {
-                        name 'The Apache Software License, Version 2.0'
-                        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        name licenseName
+                        url licenseUrl
                     }
                 }
                 developers {
                     developer {
-                        id 'barikang'
-                        name 'Jaehun Ha'
-                        email 'barikang@gmail.com'
+                        id developerId
+                        name developerName
+                        email developerEmail
                     }
                 }
                 scm {
@@ -169,8 +165,6 @@ artifacts {
 Properties properties = new Properties()
 properties.load(project.rootProject.file('local.properties').newDataInputStream())
 
-// https://github.com/bintray/gradle-bintray-plugin
-
 
 bintray {
     user = properties.getProperty("bintray.user")
@@ -178,13 +172,15 @@ bintray {
 
     configurations = ['archives']
     pkg {
-        repo = "maven"
-        // it is the name that appears in bintray when logged
-        name = "soundpool-compat"
+        repo = bintrayRepo
+        name = bintrayName
+        desc = libraryDescription
         websiteUrl = siteUrl
         vcsUrl = gitUrl
-        licenses = ["Apache-2.0"]
+        licenses = allLicenses
         publish = true
+        publicDownloadNumbers = true
+
         version {
             gpg {
                 sign = true //Determines whether to GPG sign the files. The default is false
