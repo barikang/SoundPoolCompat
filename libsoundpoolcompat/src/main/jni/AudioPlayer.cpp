@@ -132,6 +132,7 @@ SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
 
         if (pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
         {
+            LOGD("initForPlay : PCM");
             useBufferQueue = true;
 
             const SLuint32 bitPerSample = pAudioSrc->_pcm_bitPerSample;
@@ -151,6 +152,7 @@ SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
             audioSrc = {&loc_bufq, &format_pcm};
         }
         else if (pAudioSrc->_type == AudioSource::AudioSourceType::FileDescriptor) {
+            LOGD("initForPlay : FD");
             if(_dupFD > 0)
                 close(_dupFD);
             _dupFD = dup(pAudioSrc->_fd);
@@ -160,6 +162,7 @@ SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
             audioSrc = { &loc_fd,&format_mime };
         }
         else if (pAudioSrc->_type == AudioSource::AudioSourceType::Uri) {
+            LOGD("initForPlay : URI");
             loc_uri = {SL_DATALOCATOR_URI , (SLchar*) pAudioSrc->_uri_path.c_str()};
             format_mime = {SL_DATAFORMAT_MIME, NULL, SL_CONTAINERTYPE_UNSPECIFIED};
             audioSrc = { &loc_uri,&format_mime};

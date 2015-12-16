@@ -461,4 +461,6 @@ public class SoundPoolCompat {
 
     }
 
+    public boolean isOpenSLESSoundPool() { return mUseOpenSLES; }
+
 }

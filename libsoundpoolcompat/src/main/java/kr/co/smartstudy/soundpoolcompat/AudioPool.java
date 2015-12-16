@@ -119,27 +119,21 @@ public class AudioPool {
     }
 
     public final int loadAsync(FileDescriptor fd, long offset, long length) {
-        if(mReleased)
+        if (mReleased)
             return -1;
 
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH && mTryPreDecode) {
-            AudioSource audioSrc = AudioSource.createFromFD(fd, offset, length);
-            synchronized (mAudioSources) {
-                mAudioSources.append(audioSrc.getAudioID(), audioSrc);
-            }
-            AudioEngine.nativeDecodeAudio(audioSrc.getAudioID(),mStreamGroupID);
-            return audioSrc.getAudioID();
-        }
-        else
-        {
-            AudioSource audioSrc = AudioSource.createFromFD(fd, offset, length);
-            synchronized (mAudioSources) {
-                mAudioSources.append(audioSrc.getAudioID(), audioSrc);
-            }
 
-            postEvent(SAMPLE_LOADED,audioSrc.getAudioID(),0,null);
-            return audioSrc.getAudioID();
+        AudioSource audioSrc = AudioSource.createFromFD(fd, offset, length);
+        synchronized (mAudioSources) {
+            mAudioSources.append(audioSrc.getAudioID(), audioSrc);
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH && mTryPreDecode) {
+            AudioEngine.nativeDecodeAudio(audioSrc.getAudioID(), mStreamGroupID);
+        } else {
+            postEvent(SAMPLE_LOADED, audioSrc.getAudioID(), 0, null);
+        }
+
+        return audioSrc.getAudioID();
     }
 
     public final boolean unload(int audioID)
