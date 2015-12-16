@@ -202,7 +202,7 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
                         if(pAudioPlayer->isForDecoding()) {
                             JNIEnv *env = getJNIEnv();
                             env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID,
-                                                      task.streamGroupID,task.streamID,0);
+                                                      task.streamGroupID,task.audioID,0);
                             gJavaVM->DetachCurrentThread();
 
                         }
