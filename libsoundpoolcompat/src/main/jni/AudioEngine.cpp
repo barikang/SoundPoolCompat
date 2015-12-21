@@ -24,7 +24,8 @@ typedef struct JniMethodInfo_
 extern "C"
 {
 static JavaVM *gJavaVM = nullptr;
-static JniMethodInfo callbackMethodInfo;
+static JniMethodInfo methodInfoCallbackDecodingComplete;
+static JniMethodInfo methodInfoCallbackPlayComplete;
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved)
 {
@@ -36,8 +37,11 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved)
     }
 
     jclass clazz = env->FindClass(CLASS_NAME);
-    callbackMethodInfo.methodID = env->GetStaticMethodID(clazz,"onDecodingComplete", "(III)V");
-    callbackMethodInfo.classID = (jclass) env->NewGlobalRef(clazz);
+    methodInfoCallbackDecodingComplete.methodID = env->GetStaticMethodID(clazz,"onDecodingComplete", "(III)V");
+    methodInfoCallbackDecodingComplete.classID = (jclass) env->NewGlobalRef(clazz);
+
+    methodInfoCallbackPlayComplete.methodID = env->GetStaticMethodID(clazz,"onPlayComplete", "(III)V");
+    methodInfoCallbackPlayComplete.classID = (jclass) env->NewGlobalRef(clazz);
 
     return JNI_VERSION_1_4;
 }
@@ -189,10 +193,11 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
                     if(doStop)
                     {
-                        if(pAudioPlayer->isForDecoding()) {
+                        const bool playError = task.taskType == SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAYERROR;
+                        if(pAudioPlayer->isForDecoding() && !playError) {
                             auto pAudioSrc = pAudioPlayer->_pAudioSrc;
-                            pAudioSrc->_type = AudioSource::AudioSourceType::PCM;
                             pAudioPlayer->fillOutPCMInfo();
+                            pAudioSrc->_type = AudioSource::AudioSourceType::PCM;
                             pAudioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
                             pAudioSrc->closeFD();
                         }
@@ -201,10 +206,21 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
 
                         if(pAudioPlayer->isForDecoding()) {
                             JNIEnv *env = getJNIEnv();
-                            env->CallStaticVoidMethod(callbackMethodInfo.classID,callbackMethodInfo.methodID,
-                                                      task.streamGroupID,task.audioID,0);
+                            env->CallStaticVoidMethod(methodInfoCallbackDecodingComplete.classID,
+                                                      methodInfoCallbackDecodingComplete.methodID,
+                                                      task.streamGroupID,task.audioID,playError ? 1 : 0);
                             gJavaVM->DetachCurrentThread();
-
+                        }
+                        else
+                        {
+                            if(pAudioPlayer->_doPlayEndCallBack) {
+                                JNIEnv *env = getJNIEnv();
+                                env->CallStaticVoidMethod(methodInfoCallbackPlayComplete.classID,
+                                                          methodInfoCallbackPlayComplete.methodID,
+                                                          task.streamGroupID, task.streamID,
+                                                          playError ? 1 : 0);
+                                gJavaVM->DetachCurrentThread();
+                            }
                         }
                     }
 
@@ -233,7 +249,6 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
                 if(resultInitPlayer == SL_RESULT_MEMORY_FAILURE)
                 {
                     pAudioSrc->_decodingState.store(AudioSource::DecodingState::Completed);
-                    //pAudioEngine->decodeAudio(pAudioSrc->_audioID,pPlayer->_streamGroupID);
                     priorAudioTaskQueue.push(task);
                     break;
                 }
@@ -253,8 +268,10 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
                 if(pPlayer == nullptr || pAudioSrc == nullptr)
                     continue;
 
+                ///*
                 if(pAudioSrc->_decodingState.load() != AudioSource::DecodingState::Completed)
                     continue;
+                //*/
 
                 SLresult resultInitPlayer = pPlayer->initForPlay(pAudioSrc);
                 if (resultInitPlayer != SL_RESULT_SUCCESS){
@@ -374,7 +391,7 @@ bool AudioEngine::init()
 
 }
 
-int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate)
+int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate,bool doCallback)
 {
     int streamID = -1;
     do
@@ -396,6 +413,7 @@ int AudioEngine::playAudio(int audioID,int repeatCount ,float volume,SLint32 and
         pPlayer->setPlayRate(playRate);
         pPlayer->setRepeatCount(repeatCount);
         pPlayer->setAndroidStreamType(androidStreamType);
+        pPlayer->_doPlayEndCallBack = doCallback;
 
         AudioTask task(SOUNDPOOLCOMPAT_AUDIOTASK_TYPE_PLAY,audioID,streamID,streamGroupID);
         enqueueTask(task);
@@ -557,13 +575,13 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeR
 }
 
 JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePlayAudio
-        (JNIEnv *env, jclass clasz, jint audioID, jint repeatCount, jfloat volume,jint androidStreamType,jint streamGroupID, jfloat playRate)
+        (JNIEnv *env, jclass clasz, jint audioID, jint repeatCount, jfloat volume,jint androidStreamType,jint streamGroupID, jfloat playRate,jboolean doCallback)
 {
     jint ret = -1;
     auto pEngine = AudioEngine::getInstance();
     if(pEngine)
     {
-        ret = pEngine->playAudio(audioID,repeatCount,volume,(SLint32)androidStreamType,streamGroupID,playRate);
+        ret = pEngine->playAudio(audioID,repeatCount,volume,(SLint32)androidStreamType,streamGroupID,playRate,doCallback);
     }
 
     return ret;

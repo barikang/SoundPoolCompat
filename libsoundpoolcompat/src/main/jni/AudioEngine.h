@@ -57,7 +57,7 @@ namespace SoundPoolCompat {
         ~AudioEngine();
 
     public:
-        int playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate);
+        int playAudio(int audioID,int repeatCount ,float volume,SLint32 androidStreamType,int streamGroupID,float playRate,bool doPlayEndCallBack);
         int decodeAudio(int audioID,int streamGroupID);
         void pause(int streamID);
         void pauseAll(int streamGroupID);

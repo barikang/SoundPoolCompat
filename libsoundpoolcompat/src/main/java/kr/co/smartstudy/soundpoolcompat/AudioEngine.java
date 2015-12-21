@@ -4,9 +4,6 @@ import android.media.AudioManager;
 import android.util.SparseArray;
 
 import java.lang.ref.WeakReference;
-import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Jaehun on 2015-11-30.
@@ -19,7 +16,7 @@ public class AudioEngine {
 
     static native void nativeInitilizeAudioEngine();
     static native void nativeReleaseAudioEngine();
-    static native int nativePlayAudio(int audioID,int repeatcount ,float volume,int androidStreamType,int streamGroupID,float playRate);
+    static native int nativePlayAudio(int audioID,int repeatcount ,float volume,int androidStreamType,int streamGroupID,float playRate,boolean doPlayEndCallback);
     static native int nativeDecodeAudio(int audioID,int streamGroupID);
     static native void nativePause(int streamID);
     static native void nativeStop(int streamID);
@@ -60,6 +57,18 @@ public class AudioEngine {
         }
         if(audioPool != null)
             audioPool.postEvent(AudioPool.SAMPLE_LOADED,audioID,result,null);
+
+    }
+
+    static void onPlayComplete(int streamGroupID,int streamID,int result)
+    {
+        AudioPool audioPool = null;
+        synchronized (gStreamGroupID2AudioPool)
+        {
+            audioPool = gStreamGroupID2AudioPool.get(streamGroupID, gNullAudioPool).get();
+        }
+        if(audioPool != null)
+            audioPool.postEvent(AudioPool.STREAM_PLAY_END,streamID,result,null);
 
     }
 

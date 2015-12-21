@@ -15,3 +15,7 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+-keepclassmembers class kr.co.smartstudy.soundpoolcompat.AudioEngine { *; }
+-keepclasseswithmembernames class kr.co.smartstudy.soundpoolcompat.AudioEngine { *; }
+-keep public class kr.co.smartstudy.soundpoolcompat.AudioEngine.** { *; }

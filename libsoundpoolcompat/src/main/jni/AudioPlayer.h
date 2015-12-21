@@ -65,6 +65,7 @@ namespace SoundPoolCompat {
         AudioEngine *_pAudioEngine;
         int _currentBufIndex;
         bool _isForDecoding;
+        bool _doPlayEndCallBack;
 
         SLint32 _androidStreamType;
 

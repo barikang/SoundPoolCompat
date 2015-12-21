@@ -78,6 +78,7 @@ AudioPlayer::AudioPlayer(AudioEngine *pAudioEngine,int streamID,int streamGroupI
         , _dupFD(0)
         , _isForDecoding(false)
         , _inited(false)
+        , _doPlayEndCallBack(false)
 
         , _itf_play(nullptr)
         , _itf_volume(nullptr)

@@ -38,10 +38,10 @@ JNIEXPORT void JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativeR
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine
  * Method:    nativePlayAudio
- * Signature: (IIFIIF)I
+ * Signature: (IIFIIFZ)I
  */
 JNIEXPORT jint JNICALL Java_kr_co_smartstudy_soundpoolcompat_AudioEngine_nativePlayAudio
-  (JNIEnv *, jclass, jint, jint, jfloat, jint, jint, jfloat);
+  (JNIEnv *, jclass, jint, jint, jfloat, jint, jint, jfloat, jboolean);
 
 /*
  * Class:     kr_co_smartstudy_soundpoolcompat_AudioEngine

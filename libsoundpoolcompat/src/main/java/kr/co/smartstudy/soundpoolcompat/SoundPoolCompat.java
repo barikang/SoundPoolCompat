@@ -224,7 +224,7 @@ public class SoundPoolCompat {
     public int play(int soundID, float leftVolume, float rightVolume,
                           int priority, int loop, float rate) {
         return mUseOpenSLES ?
-                mAudioPool.play(soundID,leftVolume,rightVolume,priority,loop,rate)
+                mAudioPool.play(soundID,leftVolume,rightVolume,priority,loop,rate,null)
                 : mSoundPool.play(soundID, leftVolume, rightVolume, priority, loop, rate);
     }
 
@@ -462,5 +462,6 @@ public class SoundPoolCompat {
     }
 
     public boolean isOpenSLESSoundPool() { return mUseOpenSLES; }
+    public AudioPool getAudioPool() { return mAudioPool; }
 
 }
