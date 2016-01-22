@@ -12,6 +12,14 @@ namespace SoundPoolCompat {
 
     class AudioEngine;
 
+    enum AudioPlayerState
+    {
+        Paused,
+        Playing,
+        Stopped,
+
+    };
+
     class AudioPlayer {
     private:
         static void callback_SimpleBufferQueue(SLAndroidSimpleBufferQueueItf bq, void *context);
@@ -31,6 +39,8 @@ namespace SoundPoolCompat {
         void setPlayRate(float rate);
         void setRepeatCount(int loop);
         void setAndroidStreamType(SLint32 androidStreamType);
+        void setPosition(int milli);
+        int  getPosition();
         bool play();
         void pause();
         void resume();
@@ -48,7 +58,6 @@ namespace SoundPoolCompat {
         float _volume;
         float _playRate;
 
-        volatile bool _playOver;
         volatile bool _inited;
 
         SLObjectItf _itf_playerObject;
@@ -59,6 +68,7 @@ namespace SoundPoolCompat {
         SLAndroidConfigurationItf _itf_androidConfiguration;
         SLPlaybackRateItf _itf_playerackRate;
         SLMetadataExtractionItf _itf_metadataExtraction;
+        SLSeekItf _itf_seek;
 
         std::shared_ptr<AudioSource> _pAudioSrc;
         int _dupFD;
@@ -66,6 +76,7 @@ namespace SoundPoolCompat {
         int _currentBufIndex;
         bool _isForDecoding;
         bool _doPlayEndCallBack;
+        AudioPlayerState _audioPlayerState;
 
         SLint32 _androidStreamType;
 
@@ -74,6 +85,8 @@ namespace SoundPoolCompat {
         int _keyIdx_BitsPerSample = -1;
         int _keyIdx_ContainerSize = -1;
         int _keyIdx_Endianness = -1;
+
+        std::recursive_mutex _recurMutex;
 
         friend class AudioEngine;
         friend class AudioTask;

@@ -28,6 +28,12 @@
         android:text="plays random"
         android:id="@+id/btn_plays"/>
 
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="plays 1 repeat"
+        android:id="@+id/btn_repeat_play"/>
+
 
     <Button
         android:layout_width="match_parent"

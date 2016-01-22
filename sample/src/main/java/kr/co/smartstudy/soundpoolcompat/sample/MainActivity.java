@@ -50,7 +50,7 @@ public class MainActivity extends AppCompatActivity {
                         synchronized (startTimes) {
                             if (startTimes.indexOfKey(sampleId) >= 0) {
                                 long loadingTime = System.currentTimeMillis() - startTimes.get(sampleId);
-                                Log.d(TAG, String.format("load complete %d %d [%dms] [%d/%d]", sampleId, status, loadingTime,(loadCnt-_count.get()+1),loadCnt));
+                                Log.d(TAG, String.format("load complete %d %d [%dms] [%d/%d]", sampleId, status, loadingTime, (loadCnt - _count.get() + 1), loadCnt));
                             }
                         }
 
@@ -64,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
                 for (int i = 0; i < loadCnt; i++) {
                     long st = System.currentTimeMillis();
                     synchronized (startTimes) {
-                        int soundID = mSoundPool.load(MainActivity.this, resids[i%resids.length], 0);
+                        int soundID = mSoundPool.load(MainActivity.this, resids[i % resids.length], 0);
                         synchronized (mSoundIDs) {
                             mSoundIDs.add(soundID);
                         }
@@ -120,6 +120,25 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        findViewById(R.id.btn_repeat_play).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                int id = 0;
+                if(id == 0)
+                    id = mSoundPool.getAudioPool().loadAsync(MainActivity.this,R.raw.numbers_en_1,false);
+                //mSoundPool.load(MainActivity.this, R.raw.numbers_en_1,0);
+                ///*
+                if(mSoundPool.isOpenSLESSoundPool())
+                {
+
+                    mSoundPool.play(id,1.0f,1.0f,1,-1,1.0f);
+                }
+                //*/
+
+
+            }
+        });
+
         findViewById(R.id.btn_pause_all).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -134,6 +153,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
+
+    int id = 0;
 
     @Override
     protected void onDestroy() {

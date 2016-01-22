@@ -72,7 +72,6 @@ AudioPlayer::AudioPlayer(AudioEngine *pAudioEngine,int streamID,int streamGroupI
         , _pAudioSrc(nullptr)
 
         , _itf_playerObject(nullptr)
-        , _playOver(false)
         , _repeatCount(1)
         , _currentBufIndex(0)
         , _dupFD(0)
@@ -87,6 +86,8 @@ AudioPlayer::AudioPlayer(AudioEngine *pAudioEngine,int streamID,int streamGroupI
         , _itf_androidConfiguration(nullptr)
         , _itf_playerackRate(nullptr)
         , _itf_metadataExtraction(nullptr)
+        , _itf_seek(nullptr)
+        , _audioPlayerState(AudioPlayerState::Stopped)
 {
 }
 
@@ -104,6 +105,7 @@ AudioPlayer::~AudioPlayer()
         _itf_androidConfiguration = nullptr;
         _itf_playerackRate = nullptr;
         _itf_metadataExtraction = nullptr;
+        _itf_seek = nullptr;
     }
 
     if(_dupFD > 0)
@@ -177,16 +179,18 @@ SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
         SLDataSink audioSnk = {&loc_outmix, NULL};
 
         // create audio player
-        const SLInterfaceID ids[6] = {
+        const SLInterfaceID ids[7] = {
                 SL_IID_ANDROIDSIMPLEBUFFERQUEUE
                 ,SL_IID_VOLUME
                 ,SL_IID_PLAY
                 ,SL_IID_ANDROIDCONFIGURATION
                 ,SL_IID_PLAYBACKRATE
+                ,SL_IID_SEEK
                 ,SL_IID_PREFETCHSTATUS
         };
-        const SLboolean req[6] = {
+        const SLboolean req[7] = {
                 useBufferQueue ? SL_BOOLEAN_TRUE : SL_BOOLEAN_FALSE
+                ,SL_BOOLEAN_TRUE
                 ,SL_BOOLEAN_TRUE
                 ,SL_BOOLEAN_TRUE
                 ,SL_BOOLEAN_TRUE
@@ -195,7 +199,7 @@ SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
         };
 
         result = (*engineEngine)->CreateAudioPlayer(engineEngine, &_itf_playerObject,
-                                                    &audioSrc, &audioSnk, useBufferQueue ? 5 : 6, ids, req);
+                                                    &audioSrc, &audioSnk, useBufferQueue ? 5 : 7, ids, req);
         if (SL_RESULT_SUCCESS != result) {
             //LOGE("create audio player fail");
             break;
@@ -245,6 +249,9 @@ SLresult AudioPlayer::initForPlay(const std::shared_ptr<AudioSource>& pAudioSrc)
             if (SL_RESULT_SUCCESS != result) {LOGE("set fillupdateperiod fail");break; };
             result = (*_itf_prefetchStatus)->RegisterCallback(_itf_prefetchStatus,AudioPlayer::callback_PrefetchStatus , this );
             if (SL_RESULT_SUCCESS != result) {LOGE("register prefetch callback fail");break; };
+
+            result = (*_itf_playerObject)->GetInterface(_itf_playerObject,SL_IID_SEEK,&_itf_seek);
+            if (SL_RESULT_SUCCESS != result) {LOGE("get the seek interface fail");break; };
 
         }
 
@@ -425,7 +432,7 @@ SLresult AudioPlayer::initForDecoding(const std::shared_ptr<AudioSource>& pAudio
 
 
 bool AudioPlayer::enqueueBuffer() {
-    if (_playOver || !_inited)
+    if (!_inited)
         return false;
 
     bool ret = false;
@@ -464,7 +471,7 @@ bool AudioPlayer::enqueueBuffer() {
 
 void AudioPlayer::resetBuffer()
 {
-    if (_playOver || !_inited)
+    if (!_inited)
         return;
 
     if(_pAudioSrc != nullptr && _pAudioSrc->_type == AudioSource::AudioSourceType::PCM)
@@ -480,7 +487,7 @@ void AudioPlayer::resetBuffer()
 void AudioPlayer::setVolume(float volume)
 {
     _volume = volume;
-    if (_playOver || !_inited)
+    if (!_inited)
         return;
 
     if(volume < 0.0f )
@@ -501,7 +508,7 @@ void AudioPlayer::setVolume(float volume)
 void AudioPlayer::setPlayRate(float rate)
 {
     _playRate = rate;
-    if (_playOver || !_inited)
+    if (!_inited)
         return;
 
     if(_itf_playerackRate)
@@ -523,13 +530,48 @@ void AudioPlayer::setAndroidStreamType(SLint32 androidStreamType)
     _androidStreamType = androidStreamType;
 }
 
-bool AudioPlayer::play() {
-    if (_playOver || !_inited)
-        return false;
+void AudioPlayer::setPosition(int milli)
+{
+    if(_itf_seek) {
+        auto result = (*_itf_seek)->SetPosition(_itf_seek,milli,SL_SEEKMODE_ACCURATE);
+        if (SL_RESULT_SUCCESS != result) {
+            LOGE("SetPosition fail");
+            return;
+        }
+    } else {
+        LOGE("setPosition() is not supported");
+    }
+}
 
-    resetBuffer();
-    if(!enqueueBuffer() || !enqueueBuffer())
-        return false;
+int AudioPlayer::getPosition()
+{
+    SLmillisecond milli = -1;
+    if(_inited) {
+        auto result = (*_itf_play)->GetPosition(_itf_play,&milli);
+        if (SL_RESULT_SUCCESS != result) {
+            LOGE("GetPosition fail");
+        }
+    } else {
+        LOGE("getPosition() : not inited yet.");
+    }
+
+    return milli;
+}
+
+bool AudioPlayer::play() {
+    {
+        std::lock_guard <std::recursive_mutex> guard(_recurMutex);
+        if (!_inited || _audioPlayerState != AudioPlayerState::Stopped)
+            return false;
+
+        _audioPlayerState = AudioPlayerState::Playing;
+    }
+
+        resetBuffer();
+        if (!enqueueBuffer() || !enqueueBuffer())
+            return false;
+
+
 
     auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_PLAYING);
     if (SL_RESULT_SUCCESS != result) {
@@ -537,36 +579,60 @@ bool AudioPlayer::play() {
         return false;
     }
 
+
+
     return true;
 }
 
 void AudioPlayer::pause()
 {
-    if (_playOver || !_inited)
-        return;
+    {
+        std::lock_guard <std::recursive_mutex> guard(_recurMutex);
+
+        if (!_inited || _audioPlayerState == AudioPlayerState::Paused)
+            return;
+        _audioPlayerState = AudioPlayerState::Paused;
+    }
 
     auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_PAUSED);
     if(SL_RESULT_SUCCESS != result){
         LOGE("SetPlayState pause fail (resume)");
+        return;
     }
+
+
 }
 
 void AudioPlayer::resume()
 {
-    if (_playOver || !_inited)
-        return;
+    {
+        std::lock_guard <std::recursive_mutex> guard(_recurMutex);
+
+        if (!_inited || _audioPlayerState != AudioPlayerState::Paused)
+            return;
+        _audioPlayerState = AudioPlayerState::Playing;
+    }
 
     auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_PLAYING);
-    if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState play fail (resume)"); };
+    if(SL_RESULT_SUCCESS != result)
+    {
+        LOGE("SetPlayState play fail (resume)");
+        return;
+    };
+
+
 
 }
 
 void AudioPlayer::stop()
 {
-    if (_playOver || !_inited)
-        return;
+    {
+        std::lock_guard <std::recursive_mutex> guard(_recurMutex);
 
-
+        if (!_inited || _audioPlayerState == Stopped)
+            return;
+        _audioPlayerState = AudioPlayerState::Stopped;
+    }
 
     auto result = (*_itf_play)->SetPlayState(_itf_play, SL_PLAYSTATE_STOPPED);
     if(SL_RESULT_SUCCESS != result){ LOGE("SetPlayState stop fail "); };
@@ -578,7 +644,9 @@ void AudioPlayer::stop()
 
         }
     }
-    _playOver = true;
+
+
+
 }
 
 void AudioPlayer::fillOutPCMInfo()
@@ -619,8 +687,8 @@ void AudioPlayer::fillOutPCMInfo()
         }
     }
 
-
 }
+
 
 float AudioPlayer::getCurrentTime()
 {

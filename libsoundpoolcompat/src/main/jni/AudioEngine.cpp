@@ -180,14 +180,24 @@ void AudioEngine::threadFunc(AudioEngine* pAudioEngine)
                 {
                     bool doStop = true;
                     if(pAudioPlayer->isForDecoding() == false) {
-                        pAudioPlayer->_repeatCount--;
-                        if (pAudioPlayer->_repeatCount != 0) {
-                            do {
-                                if (!pAudioPlayer->play())
-                                    break;
-                                doStop = false;
+                        {
+                            std::lock_guard <std::recursive_mutex> guard(pAudioPlayer->_recurMutex);
 
-                            } while (0);
+                            pAudioPlayer->_repeatCount--;
+                            if (pAudioPlayer->_repeatCount != 0) {
+                                AudioPlayerState oldPlayerState = pAudioPlayer->_audioPlayerState;
+                                pAudioPlayer->stop();
+                                pAudioPlayer->setPosition(0);
+
+                                if(oldPlayerState == AudioPlayerState::Paused) {
+                                    pAudioPlayer->pause();
+                                }
+                                else {
+                                    if (!pAudioPlayer->play())
+                                        break;
+                                }
+                                doStop = false;
+                            }
                         }
                     }
 
